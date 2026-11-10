@@ -1,10 +1,13 @@
 /// Settings screen — pilih tema, wallpaper, brightness, tentang.
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/adblock/adblock_engine.dart';
 import '../../core/constants.dart';
@@ -152,9 +155,11 @@ class SettingsScreen extends ConsumerWidget {
                       imageQuality: 80,
                     );
                     if (picked != null) {
-                      await ref
-                          .read(themeProvider.notifier)
-                          .setWallpaper(picked.path);
+                      // Path dari picker adalah cache sementara yang bisa
+                      // terhapus -> salin ke penyimpanan app supaya awet.
+                      final saved = await _persistWallpaper(
+                          picked.path, theme.wallpaperPath);
+                      await ref.read(themeProvider.notifier).setWallpaper(saved);
                     }
                   },
                 ),
@@ -163,8 +168,8 @@ class SettingsScreen extends ConsumerWidget {
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.asset(
-                        theme.wallpaperPath!,
+                      child: Image.file(
+                        File(theme.wallpaperPath!),
                         height: 120,
                         width: double.infinity,
                         fit: BoxFit.cover,
@@ -367,6 +372,27 @@ class SettingsScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Salin wallpaper pilihan ke folder dokumen app; hapus wallpaper lama.
+  Future<String> _persistWallpaper(String pickedPath, String? oldPath) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final dot = pickedPath.lastIndexOf('.');
+      final ext = (dot > pickedPath.lastIndexOf('/') && dot != -1)
+          ? pickedPath.substring(dot)
+          : '.jpg';
+      final dest = '${dir.path}/wallpaper_${DateTime.now().millisecondsSinceEpoch}$ext';
+      await File(pickedPath).copy(dest);
+      if (oldPath != null && oldPath.startsWith(dir.path)) {
+        try {
+          await File(oldPath).delete();
+        } catch (_) {}
+      }
+      return dest;
+    } catch (_) {
+      return pickedPath;
+    }
   }
 
   Future<void> _editDomains(BuildContext context) async {

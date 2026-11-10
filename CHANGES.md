@@ -1,5 +1,8 @@
 # Perubahan
 
+## 1.1.1
+- **Wallpaper kustom tidak tampil**: wallpaper galeri dibaca sebagai asset (`Image.asset`) padahal itu file di perangkat -> sekarang `Image.file`. Scaffold dibuat transparan saat wallpaper aktif dan wallpaper dipasang untuk semua halaman (lewat `MaterialApp.builder`). File disalin ke penyimpanan app supaya tidak hilang saat cache dibersihkan.
+
 ## 1.1.0
 - **Scroll**: kartu di Beranda tidak lagi ikut "tergeser" sendiri saat halaman digulir (grid di dalam halaman tidak punya scroll sendiri lagi).
 - **Mirror Otakudesu dobel**: iframe "Default" tidak lagi muncul bersama daftar mirror; dipakai sebagai cadangan kalau resolve AJAX gagal.

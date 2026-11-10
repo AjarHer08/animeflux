@@ -18,7 +18,9 @@ class AnimeFluxApp extends ConsumerWidget {
       title: kAppName,
       debugShowCheckedModeBanner: false,
       theme: buildThemeData(theme),
-      home: const ThemedBackground(child: MainShell()),
+      builder: (context, child) =>
+          ThemedBackground(child: child ?? const SizedBox.shrink()),
+      home: const MainShell(),
     );
   }
 }

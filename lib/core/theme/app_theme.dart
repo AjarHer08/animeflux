@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -246,7 +247,12 @@ ThemeData buildThemeData(ThemeConfig config) {
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: scheme.surface,
+    // Saat wallpaper aktif, Scaffold harus transparan supaya wallpaper di
+    // belakang (lihat ThemedBackground) benar-benar terlihat.
+    scaffoldBackgroundColor: (config.useWallpaper &&
+            (config.wallpaperPath ?? '').isNotEmpty)
+        ? Colors.transparent
+        : scheme.surface,
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -294,6 +300,10 @@ ThemeData buildThemeData(ThemeConfig config) {
 }
 
 /// Widget untuk background yang menampilkan wallpaper (jika aktif).
+///
+/// Dipasang lewat `MaterialApp.builder` supaya berlaku untuk SEMUA halaman,
+/// bukan hanya halaman utama. Wallpaper dari galeri adalah file di perangkat,
+/// jadi dibaca dengan [Image.file] (bukan Image.asset).
 class ThemedBackground extends ConsumerWidget {
   final Widget child;
   const ThemedBackground({super.key, required this.child});
@@ -301,23 +311,21 @@ class ThemedBackground extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = ref.watch(themeProvider);
-    if (!theme.useWallpaper ||
-        theme.wallpaperPath == null ||
-        theme.wallpaperPath!.isEmpty) {
+    final path = theme.wallpaperPath;
+    if (!theme.useWallpaper || path == null || path.isEmpty) {
       return child;
     }
+    final surface = Theme.of(context).colorScheme.surface;
     return Stack(
       fit: StackFit.expand,
       children: [
-        Image.asset(
-          theme.wallpaperPath!,
+        ColoredBox(color: surface),
+        Image.file(
+          File(path),
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => const SizedBox(),
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
         ),
-        ColoredBox(
-          color: Theme.of(context).colorScheme.surface
-              .withOpacity(1 - theme.wallpaperOpacity),
-        ),
+        ColoredBox(color: surface.withOpacity(1 - theme.wallpaperOpacity)),
         child,
       ],
     );
