@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.5
+- Download: link langsung (mis. GOOGLEDRIVE) kini disiapkan lewat WebView dulu (cookie + User-Agent + Referer halaman episode) baru diunduh, karena unduh langsung sering ditolak server file. Item "Gagal" di Download Manager punya menu "Coba ulang via browser".
+
 ## 1.1.4
 - Otakudesu: perbaikan error merah di detail/episode ("(dynamic) => dynamic is not a subtype of (String) => bool"): daftar episode kini bertipe Element.
 - Adblock player: respons VAST/VMAP diganti VAST kosong (fetch & XHR), video iklan pendek dipercepat sampai selesai saat teks "Iklan ini akan berakhir" muncul, tombol Skip diklik otomatis.

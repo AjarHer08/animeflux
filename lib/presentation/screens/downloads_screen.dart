@@ -7,6 +7,7 @@ import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/download_providers.dart';
+import 'browser_screen.dart';
 
 class DownloadsScreen extends ConsumerWidget {
   const DownloadsScreen({super.key});
@@ -68,6 +69,21 @@ class DownloadsScreen extends ConsumerWidget {
                               case 'remove':
                                 await ref.read(downloadTasksProvider.notifier).remove(item.taskId);
                                 break;
+                              case 'browser':
+                                if (context.mounted) {
+                                  Navigator.of(context).push(MaterialPageRoute(
+                                    builder: (_) => BrowserScreen(
+                                      url: item.url,
+                                      title: 'Download',
+                                      autoDownloadUrl: item.url,
+                                      animeId: item.animeId,
+                                      animeTitle: item.animeTitle,
+                                      episodeTitle: item.episodeTitle,
+                                      cover: item.cover,
+                                    ),
+                                  ));
+                                }
+                                break;
                             }
                             ref.read(downloadTasksProvider.notifier).refresh();
                           },
@@ -75,6 +91,7 @@ class DownloadsScreen extends ConsumerWidget {
                             PopupMenuItem(value: 'pause', child: Text('Pause')),
                             PopupMenuItem(value: 'resume', child: Text('Resume')),
                             PopupMenuItem(value: 'cancel', child: Text('Cancel')),
+                            PopupMenuItem(value: 'browser', child: Text('Coba ulang via browser')),
                             PopupMenuItem(value: 'remove', child: Text('Hapus (+ file)')),
                           ],
                         ),

@@ -19,6 +19,11 @@ class BrowserScreen extends ConsumerStatefulWidget {
   final String episodeTitle;
   final String? cover;
 
+  /// Kalau diisi: buka dulu halaman induk file-host (supaya cookie/UA WebView
+  /// terbentuk), lalu unduh file ini otomatis memakai cookie & UA tersebut.
+  final String? autoDownloadUrl;
+  final String? referer;
+
   const BrowserScreen({
     super.key,
     required this.url,
@@ -27,6 +32,8 @@ class BrowserScreen extends ConsumerStatefulWidget {
     this.animeTitle = 'Download',
     this.episodeTitle = '',
     this.cover,
+    this.autoDownloadUrl,
+    this.referer,
   });
 
   @override
@@ -37,6 +44,28 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
   InAppWebViewController? _controller;
   double _progress = 0;
   String _title = '';
+  bool _autoStarted = false;
+
+  String get _startUrl {
+    final a = widget.autoDownloadUrl;
+    if (a == null) return widget.url;
+    final origin = Uri.tryParse(a)?.origin;
+    return (origin == null || origin.isEmpty) ? widget.url : '$origin/';
+  }
+
+  Future<void> _autoDownload() async {
+    if (_autoStarted || widget.autoDownloadUrl == null) return;
+    _autoStarted = true;
+    // Beri waktu tantangan Cloudflare/cookie selesai.
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    String? ua;
+    try {
+      final r = await _controller?.evaluateJavascript(source: 'navigator.userAgent');
+      if (r is String && r.isNotEmpty) ua = r;
+    } catch (_) {}
+    await _handleDownload(widget.autoDownloadUrl!, null, ua);
+    if (mounted) Navigator.of(context).maybePop();
+  }
 
   Future<void> _handleDownload(String url, String? filename, String? ua) async {
     String? cookie;
@@ -54,6 +83,8 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
             cover: widget.cover,
             fileName: filename,
             headers: {
+              if (widget.referer != null) 'Referer': widget.referer!,
+              'Accept': '*/*',
               if (ua != null) 'User-Agent': ua,
               if (cookie != null && cookie.isNotEmpty) 'Cookie': cookie,
             },
@@ -95,11 +126,12 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
             : null,
       ),
       body: AdblockWebView(
-        url: widget.url,
+        url: _startUrl,
         allowNewWindows: true,
         onCreated: (c) => _controller = c,
         onProgress: (p) {
           if (mounted) setState(() => _progress = p);
+          if (p >= 1) _autoDownload();
         },
         onTitle: (t) {
           if (mounted) setState(() => _title = t);

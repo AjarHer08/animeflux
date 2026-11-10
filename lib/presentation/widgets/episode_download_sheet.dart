@@ -10,7 +10,6 @@ import '../../data/models/anime.dart';
 import '../../data/models/episode.dart';
 import '../../data/repositories/anime_repository.dart';
 import '../../data/scrapers/scraper_utils.dart';
-import '../providers/download_providers.dart';
 import '../screens/browser_screen.dart';
 
 Future<void> showEpisodeDownloadSheet(
@@ -65,22 +64,23 @@ class _DownloadSheetState extends ConsumerState<_DownloadSheet> {
 
   Future<void> _download(DownloadOption d) async {
     final nav = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     if (isDirectMediaUrl(d.url)) {
-      try {
-        await ref.read(downloadTasksProvider.notifier).enqueueUrl(
-              animeId: widget.anime.id,
-              animeTitle: widget.anime.title,
-              episodeTitle: widget.episode.title,
-              url: d.url,
-              quality: d.quality?.label ?? '',
-              cover: widget.anime.cover,
-            );
-        nav.pop();
-        messenger.showSnackBar(const SnackBar(content: Text('Download dimulai')));
-      } catch (e) {
-        messenger.showSnackBar(SnackBar(content: Text('Gagal download: $e')));
-      }
+      // Unduh langsung (HttpURLConnection) sering ditolak server file (butuh
+      // cookie/UA browser). Jadi disiapkan lewat WebView dulu, lalu diunduh
+      // dengan cookie + User-Agent yang sama.
+      nav.pop();
+      nav.push(MaterialPageRoute(
+        builder: (_) => BrowserScreen(
+          url: d.url,
+          title: d.host ?? 'Download',
+          autoDownloadUrl: d.url,
+          referer: widget.episode.url,
+          animeId: widget.anime.id,
+          animeTitle: widget.anime.title,
+          episodeTitle: widget.episode.title,
+          cover: widget.anime.cover,
+        ),
+      ));
     } else {
       // Halaman file-host (acefile, pixeldrain, ...) — buka di browser
       // ber-adblock; download otomatis ditangkap begitu file dipilih.
