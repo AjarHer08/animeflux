@@ -7,6 +7,27 @@ import '../../core/theme/app_theme.dart' show sharedPreferencesInstance;
 
 enum ComicSourceId { komikstation, kiryuu, komiku }
 
+/// Kategori tipe komik per sumber: Manga (Jepang), Manhwa (Korea), Manhua (Tiongkok).
+enum ComicCategory { all, manga, manhwa, manhua }
+
+extension ComicCategoryX on ComicCategory {
+  String get label {
+    switch (this) {
+      case ComicCategory.all:
+        return 'Semua';
+      case ComicCategory.manga:
+        return 'Manga';
+      case ComicCategory.manhwa:
+        return 'Manhwa';
+      case ComicCategory.manhua:
+        return 'Manhua';
+    }
+  }
+
+  /// Nilai untuk parameter URL (kosong = tanpa filter).
+  String get slug => this == ComicCategory.all ? '' : name;
+}
+
 extension ComicSourceIdX on ComicSourceId {
   String get label {
     switch (this) {

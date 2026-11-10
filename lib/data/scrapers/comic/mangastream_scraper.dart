@@ -18,12 +18,15 @@ class MangaStreamScraper extends ComicScraper {
   ComicSourceId get source => _id;
 
   @override
-  Future<List<Comic>> getLatest({int page = 1}) =>
-      _list('$baseUrl/manga/?order=update&page=$page');
+  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all}) =>
+      _list('$baseUrl/manga/?${_typeParam(category)}order=update&page=$page');
 
   @override
-  Future<List<Comic>> getPopular({int page = 1}) =>
-      _list('$baseUrl/manga/?order=popular&page=$page');
+  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all}) =>
+      _list('$baseUrl/manga/?${_typeParam(category)}order=popular&page=$page');
+
+  /// Tema MangaStream: filter tipe lewat `type=manga|manhwa|manhua`.
+  String _typeParam(ComicCategory c) => c == ComicCategory.all ? '' : 'type=${c.slug}&';
 
   @override
   Future<List<Comic>> search(String query, {int page = 1}) {
@@ -80,12 +83,7 @@ class MangaStreamScraper extends ComicScraper {
       if (cells.length >= 2) applyInfoLine('${cells[0].text}: ${cells[1].text}', info);
     }
 
-    final genres = doc
-        .querySelectorAll('.mgen a, .seriestugenre a, .genres a')
-        .map((e) => cleanText(e.text))
-        .where((e) => e.isNotEmpty)
-        .toSet()
-        .toList();
+    final genres = uniqueTexts(doc, '.mgen a, .seriestugenre a, .genres a');
 
     var chapters = <ComicChapter>[];
     for (final li in doc.querySelectorAll('#chapterlist li, .eplister li')) {

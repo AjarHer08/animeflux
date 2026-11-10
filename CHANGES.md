@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.3
+- Komik: tiap sumber (Komikstation, Kiryuu, Komiku) kini punya kategori Semua / Manga / Manhwa / Manhua untuk Terbaru & Populer.
+- Komik: perbaikan error "Gagal memuat detail ... (dynamic) => dynamic is not a subtype of (String) => bool" (rantai map/where diganti loop bertipe eksplisit).
+
 ## 1.1.2
 - Otakudesu: pencarian memakai struktur hasil `ul.chivsrc`; Completed memakai path `/complete-anime/`; parser ongoing/completed dan daftar episode diperbaiki.
 - Login: hanya akun di dalam aplikasi. Login situs sumber (Otakudesu/Hidoristream/Lendrive) dihapus.

@@ -38,17 +38,39 @@ class KiryuuScraper extends ComicScraper {
     return const [];
   }
 
+  /// Parameter filter tipe untuk /advanced-search/ (beberapa bentuk dicoba berurutan).
+  List<String> _typeQueries(ComicCategory c) {
+    if (c == ComicCategory.all) return const [''];
+    return ['types%5B%5D=${c.slug}&', 'type=${c.slug}&', 'types=${c.slug}&'];
+  }
+
   @override
-  Future<List<Comic>> getLatest({int page = 1}) => _firstNonEmpty([
+  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all}) {
+    if (category == ComicCategory.all) {
+      return _firstNonEmpty([
         '$baseUrl/latest/?page=$page',
         '$baseUrl/?page=$page&pagedfor=latest',
       ]);
+    }
+    return _firstNonEmpty([
+      for (final q in _typeQueries(category))
+        '$baseUrl/advanced-search/?${q}order=latest&page=$page',
+    ]);
+  }
 
   @override
-  Future<List<Comic>> getPopular({int page = 1}) => _firstNonEmpty([
+  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all}) {
+    if (category == ComicCategory.all) {
+      return _firstNonEmpty([
         '$baseUrl/advanced-search/?order=popular&page=$page',
         '$baseUrl/?page=$page&pagedfor=project',
       ]);
+    }
+    return _firstNonEmpty([
+      for (final q in _typeQueries(category))
+        '$baseUrl/advanced-search/?${q}order=popular&page=$page',
+    ]);
+  }
 
   @override
   Future<List<Comic>> search(String query, {int page = 1}) {
@@ -84,12 +106,7 @@ class KiryuuScraper extends ComicScraper {
     final desc = metaContent(doc, 'og:description') ??
         cleanText(doc.querySelector('[itemprop="description"]')?.text);
 
-    final genres = doc
-        .querySelectorAll('a[href*="/genre/"], a[href*="/genres/"]')
-        .map((e) => cleanText(e.text))
-        .where((e) => e.isNotEmpty)
-        .toSet()
-        .toList();
+    final genres = uniqueTexts(doc, 'a[href*="/genre/"], a[href*="/genres/"]');
 
     final info = <String, String>{};
     for (final el in doc.querySelectorAll('li, tr, dt, p, div')) {

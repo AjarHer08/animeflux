@@ -62,16 +62,19 @@ class KomikuScraper extends ComicScraper {
     return const [];
   }
 
+  /// API Komiku: filter lewat `tipe=manga|manhwa|manhua`.
+  String _tipe(ComicCategory c) => c == ComicCategory.all ? '' : '&tipe=${c.slug}';
+
   @override
-  Future<List<Comic>> getLatest({int page = 1}) => _list([
-        '$_api/manga/page/$page/?orderby=modified',
-        '$baseUrl/manga/page/$page/',
+  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all}) => _list([
+        '$_api/manga/page/$page/?orderby=modified${_tipe(category)}',
+        '$baseUrl/manga/page/$page/?orderby=modified${_tipe(category)}',
       ]);
 
   @override
-  Future<List<Comic>> getPopular({int page = 1}) => _list([
-        '$_api/manga/page/$page/?orderby=meta_value_num',
-        '$baseUrl/manga/page/$page/?orderby=meta_value_num',
+  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all}) => _list([
+        '$_api/manga/page/$page/?orderby=meta_value_num${_tipe(category)}',
+        '$baseUrl/manga/page/$page/?orderby=meta_value_num${_tipe(category)}',
       ]);
 
   @override
@@ -98,12 +101,7 @@ class KomikuScraper extends ComicScraper {
       if (cells.length >= 2) applyInfoLine('${cells[0].text}: ${cells[1].text}', info);
     }
 
-    final genres = doc
-        .querySelectorAll('ul.genre li a, .genre a')
-        .map((e) => cleanText(e.text))
-        .where((e) => e.isNotEmpty)
-        .toSet()
-        .toList();
+    final genres = uniqueTexts(doc, 'ul.genre li a, .genre a');
 
     var chapters = <ComicChapter>[];
     for (final row in doc.querySelectorAll('#Daftar_Chapter tr, #daftarChapter tr')) {

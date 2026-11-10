@@ -20,6 +20,7 @@ class ComicHomeScreen extends StatefulWidget {
 class _ComicHomeScreenState extends State<ComicHomeScreen> {
   ComicSourceId _source = ComicSourceId.komikstation;
   _Mode _mode = _Mode.latest;
+  ComicCategory _category = ComicCategory.all;
   String _query = '';
   final _searchCtrl = TextEditingController();
 
@@ -79,6 +80,20 @@ class _ComicHomeScreenState extends State<ComicHomeScreen> {
             ),
           ),
           Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                for (final c in ComicCategory.values)
+                  ChoiceChip(
+                    label: Text(c.label),
+                    selected: _category == c,
+                    onSelected: (_) => setState(() => _category = c),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: SegmentedButton<_Mode>(
               segments: const [
@@ -98,13 +113,13 @@ class _ComicHomeScreenState extends State<ComicHomeScreen> {
             child: (_mode == _Mode.bookmark && _query.isEmpty)
                 ? _BookmarkGrid(color: scheme.outline)
                 : _PagedComicGrid(
-                    key: ValueKey('${_source.name}-${_mode.name}-$_query'),
+                    key: ValueKey('${_source.name}-${_mode.name}-${_category.name}-$_query'),
                     loader: (page) {
                       final scraper = comicRepository.scraperFor(_source);
                       if (_query.isNotEmpty) return scraper.search(_query, page: page);
                       return _mode == _Mode.popular
-                          ? scraper.getPopular(page: page)
-                          : scraper.getLatest(page: page);
+                          ? scraper.getPopular(page: page, category: _category)
+                          : scraper.getLatest(page: page, category: _category);
                     },
                   ),
           ),

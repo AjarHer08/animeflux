@@ -272,7 +272,10 @@ List<Anime> parseAnimeCardsGeneric(dom.Document doc, SourceId source, String bas
     final abs = absoluteUrl(baseUrl, href);
     final uri = Uri.tryParse(abs);
     if (uri == null || uri.host != host) continue;
-    final segs = uri.pathSegments.where((x) => x.isNotEmpty).toList();
+    final segs = <String>[];
+    for (final x in uri.pathSegments) {
+      if (x.isNotEmpty) segs.add(x);
+    }
     if (segs.isEmpty || _kNavSegments.contains(segs.first.toLowerCase())) continue;
 
     var img = a.querySelector('img');

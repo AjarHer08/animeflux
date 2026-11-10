@@ -25,8 +25,8 @@ abstract class ComicScraper {
         'User-Agent': kDesktopUserAgents[0],
       };
 
-  Future<List<Comic>> getLatest({int page = 1});
-  Future<List<Comic>> getPopular({int page = 1});
+  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all});
+  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all});
   Future<List<Comic>> search(String query, {int page = 1});
   Future<Comic> getDetail(Comic comic);
   Future<List<String>> getChapterPages(ComicChapter chapter);
@@ -35,15 +35,35 @@ abstract class ComicScraper {
 // ------------------------------------------------------------------ helpers
 
 String slugOf(String url) {
-  final segs = Uri.tryParse(url)?.pathSegments.where((s) => s.isNotEmpty).toList() ?? const [];
+  final segs = <String>[];
+  final raw = Uri.tryParse(url)?.pathSegments;
+  if (raw != null) {
+    for (final s in raw) {
+      if (s.isNotEmpty) segs.add(s);
+    }
+  }
   return segs.isEmpty ? url : segs.last;
 }
 
-String titleFromSlug(String slug) => slug
-    .split('-')
-    .where((w) => w.isNotEmpty)
-    .map((w) => w[0].toUpperCase() + w.substring(1))
-    .join(' ');
+String titleFromSlug(String slug) {
+  final words = <String>[];
+  for (final w in slug.split('-')) {
+    if (w.isEmpty) continue;
+    words.add(w[0].toUpperCase() + w.substring(1));
+  }
+  return words.join(' ');
+}
+
+/// Teks unik & tidak kosong dari semua elemen yang cocok [selector].
+/// Ditulis dengan loop eksplisit (tanpa rantai map/where) supaya tipe selalu String.
+List<String> uniqueTexts(dom.Document doc, String selector) {
+  final out = <String>[];
+  for (final e in doc.querySelectorAll(selector)) {
+    final t = cleanText(e.text);
+    if (t.isNotEmpty && !out.contains(t)) out.add(t);
+  }
+  return out;
+}
 
 /// URL gambar dari <img> (menangani lazy-load & srcset).
 String? imgUrl(dom.Element? img, String base) {
