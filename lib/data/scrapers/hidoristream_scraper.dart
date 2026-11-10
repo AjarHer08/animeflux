@@ -1,9 +1,13 @@
 /// Scraper untuk Hidoristream (v10.hidoristream.online)
 library;
 
+import 'package:html/dom.dart' as dom;
+
 import '../../core/constants.dart';
 import '../../core/utils/html_utils.dart';
 import '../../core/utils/http_client.dart';
+import '../../core/utils/logger.dart';
+import '../../core/utils/web_fetcher.dart';
 import '../models/anime.dart';
 import '../models/episode.dart';
 import '../models/genre.dart';
@@ -28,13 +32,13 @@ class HidoristreamScraper implements BaseScraper {
 
   @override
   Future<List<Anime>> getOngoing({int page = 1}) async {
-    final url = '$baseUrl/daftar-ongoing';
+    final url = page <= 1 ? '$baseUrl/daftar-ongoing' : '$baseUrl/daftar-ongoing?page=$page';
     return _parseAnimeList(url);
   }
 
   @override
   Future<List<Anime>> getCompleted({int page = 1}) async {
-    final url = '$baseUrl/completed-anime';
+    final url = page <= 1 ? '$baseUrl/completed-anime' : '$baseUrl/completed-anime?page=$page';
     return _parseAnimeList(url);
   }
 
@@ -103,6 +107,40 @@ class HidoristreamScraper implements BaseScraper {
       ));
     });
 
+    // Cadangan: daftar episode tanpa class CSS khusus (link bertuliskan
+    // "Episode N" / url mengandung episode|eps|nonton|watch).
+    if (episodes.isEmpty) {
+      final seen = <String>{};
+      for (final a in doc.querySelectorAll('a[href]')) {
+        final href = a.attributes['href'] ?? '';
+        final title = cleanText(a.text);
+        if (href.isEmpty || href == '#' || title.isEmpty) continue;
+        final looksEp = RegExp(r'(episode|/eps?[-/]|-ep-|nonton|/watch)', caseSensitive: false)
+                .hasMatch(href) ||
+            RegExp(r'^(episode|eps?)\.?\s*\d', caseSensitive: false).hasMatch(title);
+        if (!looksEp) continue;
+        final abs = absoluteUrl(baseUrl, href);
+        if (abs == anime.url || !seen.add(abs)) continue;
+        final numberMatch = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(title);
+        episodes.add(Episode(
+          id: '${anime.id}::${abs.hashCode}',
+          animeId: anime.id,
+          source: source,
+          title: title,
+          slug: abs.split('/').where((x) => x.isNotEmpty).lastOrNull,
+          url: abs,
+          number: numberMatch?.group(1),
+        ));
+      }
+    }
+    if (genres.isEmpty) {
+      for (final a in doc.querySelectorAll('a[href*="genre"]')) {
+        final name = cleanText(a.text);
+        if (name.isNotEmpty) genres.add(Genre(name: name, url: a.attributes['href']));
+      }
+    }
+    final metaDesc = doc.querySelector('meta[name="description"]')?.attributes['content'];
+
     return anime.copyWith(
       status: status ?? anime.status,
       type: type ?? anime.type,
@@ -112,7 +150,9 @@ class HidoristreamScraper implements BaseScraper {
       releaseDate: release ?? anime.releaseDate,
       season: season ?? anime.season,
       genres: genres.isNotEmpty ? genres : anime.genres,
-      synopsis: synopsis.isNotEmpty ? synopsis : anime.synopsis,
+      synopsis: synopsis.isNotEmpty
+          ? synopsis
+          : (metaDesc != null ? cleanText(metaDesc) : anime.synopsis),
       episodes: episodes,
     );
   }
@@ -165,7 +205,46 @@ class HidoristreamScraper implements BaseScraper {
       addMirror(cleanText(a.text), absoluteUrl(baseUrl, href));
     }
 
+    // Cadangan: tombol server dengan atribut data-*, semua iframe, <video>,
+    // dan URL host streaming yang tertanam di <script>.
+    if (mirrors.isEmpty) {
+      for (final el in doc.querySelectorAll(
+          '[data-embed], [data-url], [data-video], [data-link]')) {
+        final raw = el.attributes['data-embed'] ??
+            el.attributes['data-url'] ??
+            el.attributes['data-video'] ??
+            el.attributes['data-link'] ??
+            '';
+        if (raw.isEmpty) continue;
+        final decoded = raw.startsWith('http') || raw.startsWith('//')
+            ? raw
+            : (tryBase64Decode(raw) ?? '');
+        final embed = decoded.contains('<iframe')
+            ? iframeFromHtmlString(decoded, baseUrl)
+            : (decoded.trim().startsWith('http') || decoded.trim().startsWith('//')
+                ? absoluteUrl(baseUrl, decoded.trim())
+                : null);
+        if (embed != null) addMirror(cleanText(el.text), embed);
+      }
+      for (final f in doc.querySelectorAll('iframe')) {
+        final raw = f.attributes['src'] ?? f.attributes['data-src'] ?? '';
+        if (raw.isEmpty || raw.startsWith('about:')) continue;
+        addMirror('', absoluteUrl(baseUrl, raw));
+      }
+      final video = doc.querySelector('video source, video')?.attributes['src'];
+      if (video != null && video.isNotEmpty) addMirror('Video', absoluteUrl(baseUrl, video));
+      final scriptText =
+          doc.querySelectorAll('script').map((e) => e.text).join('\n').replaceAll(r'\/', '/');
+      for (final m in RegExp(r'https?://[^\s<>\x22\x27\\]+').allMatches(scriptText)) {
+        final u = m.group(0)!;
+        if (detectServer(u) != 'other' || isDirectMediaUrl(u)) addMirror('', u);
+      }
+    }
+
     final downloads = parseDownloadLinks(doc, baseUrl);
+    if (mirrors.isEmpty && downloads.isEmpty && looksLikeLoginWall(doc)) {
+      throw LoginRequiredException(source);
+    }
     return episode.copyWith(mirrors: mirrors, downloads: downloads);
   }
 
@@ -230,52 +309,67 @@ class HidoristreamScraper implements BaseScraper {
   @override
   Future<String?> resolveDirectUrl(String embedUrl) => resolveDirectFromEmbed(embedUrl);
 
-  Future<List<Anime>> _parseHomeGrid(String url) async {
-    final html = await _http.getHtml(url);
-    final doc = parseHtml(html);
-    final list = <Anime>[];
-    // Hidoristream pakai list dengan class .rel, .col, .card
-    doc.querySelectorAll('.rel, .rel1, .col-md-4, .col .rel, .lst, .card-anime').forEach((card) {
-      final a = card.querySelector('a[href*="anime"], a[href*="/anime/"], h2 a, h3 a, .tt a');
-      if (a == null) return;
-      final href = a.attributes['href'];
-      if (href == null) return;
-      final title = cleanText(card.querySelector('h2, h3, .title, .tt, .ttls')?.text ?? a.text);
-      final cover = card.querySelector('img')?.attributes['src'] ??
-          card.querySelector('img')?.attributes['data-src'];
-      final slug = href.split('/').where((s) => s.isNotEmpty).lastOrNull;
-      list.add(Anime(
-        id: Anime.makeId(source, slug ?? href),
-        source: source,
-        title: title,
-        slug: slug ?? '',
-        url: href,
-        cover: cover,
-      ));
-    });
+  /// Ambil daftar anime dari [url].
+  ///
+  /// Urutan: (1) selector khusus situs, (2) parser generik tanpa class CSS,
+  /// (3) ulang lewat WebView kalau halaman dirender JavaScript / kena
+  /// Cloudflare. Kalau tetap kosong dan halaman tampak minta login -> lempar
+  /// [LoginRequiredException] supaya UI memberi petunjuk yang jelas.
+  Future<List<Anime>> _loadCards(String url, String cardSelector) async {
+    var html = await _http.getHtml(url);
+    var doc = parseHtml(html);
+    var list = _bySelector(doc, cardSelector);
+    if (list.isEmpty) list = parseAnimeCardsGeneric(doc, source, baseUrl);
+
+    if (list.isEmpty) {
+      try {
+        html = await WebFetcher.fetch(url);
+        doc = parseHtml(html);
+        list = _bySelector(doc, cardSelector);
+        if (list.isEmpty) list = parseAnimeCardsGeneric(doc, source, baseUrl);
+      } catch (e) {
+        logger.w('Hidoristream WebView fallback gagal: $e');
+      }
+    }
+    if (list.isEmpty && looksLikeLoginWall(doc)) {
+      throw LoginRequiredException(source);
+    }
     return list;
   }
 
-  Future<List<Anime>> _parseAnimeList(String url) async {
-    final html = await _http.getHtml(url);
-    final doc = parseHtml(html);
+  List<Anime> _bySelector(dom.Document doc, String cardSelector) {
     final list = <Anime>[];
-    doc.querySelectorAll('.col, .col-md-4, .rel, .list-anime .item').forEach((card) {
-      final a = card.querySelector('a');
-      final title = cleanText(card.querySelector('h2, h3, .title, .tt')?.text);
+    final seen = <String>{};
+    for (final card in doc.querySelectorAll(cardSelector)) {
+      final a = card.querySelector('a[href]');
       final href = a?.attributes['href'];
-      final thumb = card.querySelector('img')?.attributes['src'];
-      if (href == null || title.isEmpty) return;
-      final slug = href.split('/').where((s) => s.isNotEmpty).lastOrNull;
+      if (a == null || href == null || href.isEmpty || href == '#') continue;
+      final title = cleanText(
+        card.querySelector('h2, h3, .title, .tt, .ttls')?.text ??
+            a.attributes['title'] ??
+            card.querySelector('img')?.attributes['alt'] ??
+            a.text,
+      );
+      if (title.isEmpty) continue;
+      final url = absoluteUrl(baseUrl, href);
+      if (!seen.add(url)) continue;
+      final slug = url.split('/').where((x) => x.isNotEmpty).lastOrNull ?? '';
+      final cover = imageFromElement(card.querySelector('img'));
       list.add(Anime(
-        id: Anime.makeId(source, slug ?? href),
+        id: Anime.makeId(source, slug.isEmpty ? url : slug),
         source: source,
         title: title,
-        slug: slug ?? '',
-        url: href,
-        cover: thumb,
+        slug: slug,
+        url: url,
+        cover: cover == null ? null : absoluteUrl(baseUrl, cover),
       ));
-    });
+    }
     return list;
   }
+
+  Future<List<Anime>> _parseHomeGrid(String url) =>
+      _loadCards(url, '.rel, .rel1, .col-md-4, .col .rel, .lst, .card-anime, article, .item');
+
+  Future<List<Anime>> _parseAnimeList(String url) =>
+      _loadCards(url, '.col, .col-md-4, .rel, .list-anime .item, article, .item');
 }

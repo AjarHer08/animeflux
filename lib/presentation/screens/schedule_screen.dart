@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../widgets/glass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
@@ -40,7 +41,7 @@ class _ScheduleScreenState extends ConsumerState<ScheduleScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: const Text('Jadwal Rilis'),
       ),
       body: SafeArea(

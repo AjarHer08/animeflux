@@ -29,13 +29,13 @@ class LendriveScraper implements BaseScraper {
 
   @override
   Future<List<Anime>> getOngoing({int page = 1}) async {
-    final url = '$baseUrl/ongoing';
+    final url = page <= 1 ? '$baseUrl/ongoing' : '$baseUrl/ongoing?page=$page';
     return _parseAnimeList(url);
   }
 
   @override
   Future<List<Anime>> getCompleted({int page = 1}) async {
-    final url = '$baseUrl/completed';
+    final url = page <= 1 ? '$baseUrl/completed' : '$baseUrl/completed?page=$page';
     return _parseAnimeList(url);
   }
 

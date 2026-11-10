@@ -1,5 +1,14 @@
 # Perubahan
 
+## 1.1.0
+- **Scroll**: kartu di Beranda tidak lagi ikut "tergeser" sendiri saat halaman digulir (grid di dalam halaman tidak punya scroll sendiri lagi).
+- **Mirror Otakudesu dobel**: iframe "Default" tidak lagi muncul bersama daftar mirror; dipakai sebagai cadangan kalau resolve AJAX gagal.
+- **Hidoristream tidak terbaca**: parser kartu generik (tanpa bergantung class CSS), gambar lazy-load, fallback WebView untuk halaman JS/Cloudflare, fallback daftar episode & mirror, paginasi Ongoing/Completed.
+- **Login/VIP**: login situs sumber lewat WebView (cookie disimpan & dipakai scraper), pesan jelas kalau situs meminta login/VIP, profil akun lokal.
+- **Liquid glass**: efek kaca di bar navigasi & app bar, bisa dimatikan di Pengaturan > Tema.
+- **Cek pembaruan** lewat GitHub Releases (otomatis maks 1x/12 jam + tombol di Pengaturan > Tentang).
+- **Ongoing & Completed**: tombol di Beranda + "Lihat semua".
+
 ## Bug yang diperbaiki
 - **Tombol download tidak ada**: link download di-parse tapi tidak pernah dimasukkan ke hasil, dan UI tidak punya tombol download. Sekarang `Episode.downloads` terisi, ada ikon download di tiap episode + di player.
 - **Mirror error**: decode mirror Otakudesu rusak (kode `Uri.dataFromString` tak berfungsi); header `Accept-Encoding: br` membuat HTML tak terbaca (Dart tak bisa decode brotli); link file-host dianggap video langsung. Sekarang: iframe default + AJAX mirror, resolve bertingkat, fallback WebView ber-adblock.

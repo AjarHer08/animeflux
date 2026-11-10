@@ -30,6 +30,10 @@ class AnimeGrid extends StatelessWidget {
     return MasonryGridView.count(
       controller: controller,
       shrinkWrap: shrinkWrap,
+      // Grid yang ditanam di dalam halaman yang sudah bisa di-scroll tidak
+      // boleh punya scroll sendiri, kalau tidak kartu ikut "tergeser" sendiri
+      // saat user menggulir halaman ke bawah.
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       padding: padding ?? const EdgeInsets.fromLTRB(16, 8, 16, 16),
       crossAxisCount: crossAxisCount,
       mainAxisSpacing: 12,

@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../widgets/glass.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/constants.dart';
@@ -64,10 +65,13 @@ class _OngoingScreenState extends ConsumerState<OngoingScreen> {
       final next = _isCompleted
           ? await animeRepository.getCompleted(_source, page: _page + 1)
           : await animeRepository.getOngoing(_source, page: _page + 1);
-      if (next.isEmpty) {
+      // Situs tanpa paginasi mengembalikan halaman yang sama -> hentikan.
+      final known = _items.map((a) => a.id).toSet();
+      final fresh = next.where((a) => known.add(a.id)).toList();
+      if (fresh.isEmpty) {
         _hasMore = false;
       } else {
-        _items = [..._items, ...next];
+        _items = [..._items, ...fresh];
         _page += 1;
       }
     } catch (_) {
@@ -80,7 +84,7 @@ class _OngoingScreenState extends ConsumerState<OngoingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: Text(_isCompleted ? 'Completed' : 'Ongoing'),
       ),
       body: SafeArea(

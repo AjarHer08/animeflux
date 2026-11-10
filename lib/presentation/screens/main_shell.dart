@@ -4,6 +4,9 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/utils/update_service.dart';
+import '../widgets/glass.dart';
+import '../widgets/update_dialog.dart';
 import 'comic_home_screen.dart';
 import 'favorites_screen.dart';
 import 'history_screen.dart';
@@ -33,14 +36,24 @@ class _MainShellState extends ConsumerState<MainShell> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    // Cek pembaruan otomatis (maks 1x / 12 jam), diam kalau tidak ada update.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final info = await UpdateService.checkIfDue();
+      if (info != null && mounted) showUpdateDialog(context, info);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
+      extendBody: true,
       body: IndexedStack(
         index: _index,
         children: _screens,
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: GlassNavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
@@ -76,7 +89,6 @@ class _MainShellState extends ConsumerState<MainShell> {
           ),
         ],
         labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-        backgroundColor: scheme.surfaceContainer,
       ),
     );
   }

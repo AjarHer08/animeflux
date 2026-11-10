@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../widgets/glass.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,7 +16,7 @@ class DownloadsScreen extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final items = ref.watch(downloadTasksProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Download Manager')),
+      appBar: GlassAppBar(title: const Text('Download Manager')),
       body: SafeArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

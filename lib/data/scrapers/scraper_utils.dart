@@ -9,6 +9,7 @@ import '../../core/constants.dart';
 import '../../core/utils/html_utils.dart';
 import '../../core/utils/http_client.dart';
 import '../../core/utils/logger.dart';
+import '../models/anime.dart';
 import '../models/episode.dart';
 
 /// Pola host -> nama server. Urutan penting (yang spesifik di atas).
@@ -198,4 +199,122 @@ Future<String?> resolveDirectFromEmbed(String embedUrl) async {
     logger.w('resolveDirectFromEmbed gagal ($embedUrl): $e');
   }
   return null;
+}
+
+
+/// Dilempar saat sumber meminta login / VIP / member untuk mengakses konten.
+class LoginRequiredException implements Exception {
+  final SourceId source;
+  const LoginRequiredException(this.source);
+
+  @override
+  String toString() =>
+      '${source.label} meminta login/VIP. Buka Pengaturan > Akun & Login, '
+      'masuk ke ${source.label}, lalu coba lagi.';
+}
+
+/// True kalau halaman tampak seperti tembok login / VIP (bukan konten).
+bool looksLikeLoginWall(dom.Document doc) {
+  if (doc.querySelector('input[type="password"]') != null) return true;
+  final t = (doc.body?.text ?? '').toLowerCase();
+  if (t.length > 6000) return false; // halaman konten biasanya panjang
+  final gate = t.contains('login') || t.contains('masuk') || t.contains('sign in');
+  final tier = t.contains('vip') || t.contains('premium') || t.contains('member');
+  return gate && tier;
+}
+
+/// Ambil URL gambar dari <img>, termasuk atribut lazy-load.
+String? imageFromElement(dom.Element? img) {
+  if (img == null) return null;
+  bool ok(String? v) {
+    if (v == null) return false;
+    final t = v.trim();
+    return t.isNotEmpty && !t.startsWith('data:') && !t.contains('placeholder');
+  }
+
+  for (final attr in const [
+    'data-src', 'data-lazy-src', 'data-original', 'data-lazy', 'data-img', 'src',
+  ]) {
+    final v = img.attributes[attr];
+    if (ok(v)) return v!.trim();
+  }
+  final srcset = img.attributes['data-srcset'] ?? img.attributes['srcset'];
+  if (ok(srcset)) return srcset!.trim().split(',').first.trim().split(' ').first;
+  return null;
+}
+
+const _kNavSegments = {
+  'login', 'register', 'daftar', 'genre', 'genres', 'jadwal', 'schedule',
+  'page', 'tag', 'category', 'search', 'contact', 'dmca', 'about', 'privacy',
+  'faq', 'bookmark', 'history', 'user', 'vip', 'premium', 'donasi', 'donate',
+  'wp-login.php', 'wp-admin', 'feed',
+};
+const _kDetailSegments = {'anime', 'series', 'detail', 'title', 'show', 'nonton', 'film'};
+
+/// Parser kartu anime yang tidak bergantung pada class CSS tertentu.
+///
+/// Dipakai sebagai cadangan ketika selector spesifik situs tidak menemukan
+/// apa pun (situs sering ganti tema). Setiap link satu-host yang punya
+/// gambar dianggap kartu; link navigasi dibuang.
+List<Anime> parseAnimeCardsGeneric(dom.Document doc, SourceId source, String baseUrl) {
+  final host = Uri.tryParse(baseUrl)?.host ?? '';
+  final found = <String, Anime>{};
+  final detailLike = <String>{};
+
+  for (final a in doc.querySelectorAll('a[href]')) {
+    final href = (a.attributes['href'] ?? '').trim();
+    if (href.isEmpty ||
+        href.startsWith('#') ||
+        href.startsWith('javascript:') ||
+        href.startsWith('mailto:')) {
+      continue;
+    }
+    final abs = absoluteUrl(baseUrl, href);
+    final uri = Uri.tryParse(abs);
+    if (uri == null || uri.host != host) continue;
+    final segs = uri.pathSegments.where((x) => x.isNotEmpty).toList();
+    if (segs.isEmpty || _kNavSegments.contains(segs.first.toLowerCase())) continue;
+
+    var img = a.querySelector('img');
+    dom.Element card = a;
+    if (img == null) {
+      final parent = a.parent;
+      if (parent != null && parent.querySelectorAll('a[href]').length <= 2) {
+        img = parent.querySelector('img');
+        card = parent;
+      }
+    }
+    final cover = imageFromElement(img);
+    if (cover == null) continue;
+
+    var title = cleanText(a.attributes['title']);
+    if (title.isEmpty) title = cleanText(img?.attributes['alt']);
+    if (title.isEmpty) title = cleanText(img?.attributes['title']);
+    if (title.isEmpty) {
+      title = cleanText(card.querySelector('h1, h2, h3, h4, .title, .tt, .ttls')?.text);
+    }
+    if (title.isEmpty) title = cleanText(a.text);
+    if (title.length < 2) continue;
+
+    final slug = segs.last;
+    if (_kDetailSegments.contains(segs.first.toLowerCase())) detailLike.add(abs);
+
+    final existing = found[abs];
+    if (existing == null) {
+      found[abs] = Anime(
+        id: Anime.makeId(source, slug),
+        source: source,
+        title: title,
+        slug: slug,
+        url: abs,
+        cover: absoluteUrl(baseUrl, cover),
+      );
+    }
+  }
+
+  // Kalau ada link bergaya /anime/<slug>, buang link lain (episode, dll).
+  if (detailLike.isNotEmpty) {
+    return [for (final e in found.entries) if (detailLike.contains(e.key)) e.value];
+  }
+  return found.values.toList();
 }

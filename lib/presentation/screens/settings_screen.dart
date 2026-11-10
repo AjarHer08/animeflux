@@ -11,6 +11,9 @@ import '../../core/constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../providers/favorites_providers.dart';
 import '../../data/models/comic.dart';
+import '../widgets/glass.dart';
+import '../widgets/update_dialog.dart';
+import 'account_screen.dart';
 import 'adblock_screen.dart';
 import 'downloads_screen.dart';
 
@@ -72,6 +75,15 @@ class SettingsScreen extends ConsumerWidget {
                   }).toList(),
                 ),
                 const SizedBox(height: 16),
+
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Efek liquid glass'),
+                  subtitle: const Text('Latar kaca buram di bar navigasi & app bar'),
+                  value: ref.watch(glassEnabledProvider),
+                  onChanged: (v) => ref.read(glassEnabledProvider.notifier).set(v),
+                ),
+                const SizedBox(height: 8),
 
                 // Brightness
                 Text('Mode tampilan',
@@ -183,6 +195,26 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   ),
                 ],
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // === Akun ===
+            _SectionCard(
+              title: 'Akun',
+              icon: Icons.account_circle,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.login),
+                  title: const Text('Akun & Login'),
+                  subtitle: const Text('Profil, login situs sumber, status VIP'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AccountScreen()),
+                  ),
+                ),
               ],
             ),
 
@@ -311,6 +343,12 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                     );
                   },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.system_update),
+                  title: const Text('Cek pembaruan'),
+                  subtitle: const Text('Periksa versi terbaru di GitHub'),
+                  onTap: () => checkForUpdateManually(context),
                 ),
                 const ListTile(
                   leading: Icon(Icons.code),

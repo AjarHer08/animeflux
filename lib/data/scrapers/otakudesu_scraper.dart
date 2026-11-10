@@ -151,23 +151,24 @@ class OtakudesuScraper implements BaseScraper {
     final mirrors = <StreamMirror>[];
     final seenEmbeds = <String>{};
 
-    void addMirror(String label, String embed, {String? payload}) {
+    void addMirror(String label, String embed,
+        {String? payload, String? server, String? fallback}) {
       final key = payload ?? embed;
       if (key.isEmpty || !seenEmbeds.add(key)) return;
       mirrors.add(StreamMirror(
         id: '${episode.id}::${key.hashCode}',
         label: label.isEmpty ? 'Mirror ${mirrors.length + 1}' : label,
-        server: embed.isNotEmpty ? detectServer(embed) : label.toLowerCase(),
-        embedUrl: embed,
+        server: server ?? (embed.isNotEmpty ? detectServer(embed) : label.toLowerCase()),
+        // Untuk mirror AJAX, embedUrl dipakai sebagai cadangan (iframe default
+        // halaman) kalau resolve AJAX gagal.
+        embedUrl: embed.isNotEmpty ? embed : (fallback ?? ''),
         payload: payload,
       ));
     }
 
-    // 1) Player default halaman (selalu ada di HTML, tidak butuh AJAX).
     final defaultEmbed = firstIframeSrc(doc, baseUrl);
-    if (defaultEmbed != null) addMirror('Default', defaultEmbed);
 
-    // 2) Daftar mirror per kualitas: <div class="mirrorstream"><ul class="m720p">
+    // 1) Daftar mirror per kualitas: <div class="mirrorstream"><ul class="m720p">
     //    <li><a data-content="BASE64(json)">server</a>. URL asli baru didapat
     //    lewat AJAX (lihat resolveMirrorEmbed).
     for (final ul in doc.querySelectorAll('.mirrorstream ul')) {
@@ -179,9 +180,15 @@ class OtakudesuScraper implements BaseScraper {
         final data = a.attributes['data-content'];
         if (data == null || data.isEmpty) continue;
         final name = cleanText(a.text);
-        addMirror(quality.isEmpty ? name : '$name $quality', '', payload: data);
+        addMirror(quality.isEmpty ? name : '$name $quality', '',
+            payload: data, server: name.toLowerCase(), fallback: defaultEmbed);
       }
     }
+
+    // 2) Player default halaman. Iframe ini sama dengan salah satu mirror di
+    //    daftar AJAX di atas, jadi hanya ditampilkan sendiri kalau daftar
+    //    mirror kosong (kalau tidak, mirror tampil dobel).
+    if (defaultEmbed != null && mirrors.isEmpty) addMirror('Default', defaultEmbed);
 
     // 3) Tema lain: <select> option (value = URL / base64 URL / base64 iframe).
     for (final opt in doc.querySelectorAll('select.mirrorstream option, select#mirrors option')) {
@@ -225,15 +232,16 @@ class OtakudesuScraper implements BaseScraper {
     if (payload == null || payload.isEmpty) {
       return mirror.embedUrl.isEmpty ? null : mirror.embedUrl;
     }
+    final fallback = mirror.embedUrl.isEmpty ? null : mirror.embedUrl;
     try {
       final decoded = tryBase64Decode(payload);
-      if (decoded == null) return null;
+      if (decoded == null) return fallback;
       final params = Map<String, dynamic>.from(jsonDecode(decoded) as Map);
       final ajax = '$baseUrl/wp-admin/admin-ajax.php';
 
       final nonceRes = await _http.postForm(ajax, {'action': _kNonceAction});
       final nonce = (jsonDecode(nonceRes) as Map)['data']?.toString();
-      if (nonce == null || nonce.isEmpty) return null;
+      if (nonce == null || nonce.isEmpty) return fallback;
 
       final res = await _http.postForm(ajax, {
         ...params,
@@ -242,11 +250,11 @@ class OtakudesuScraper implements BaseScraper {
       });
       final data = (jsonDecode(res) as Map)['data']?.toString();
       final decodedHtml = tryBase64Decode(data);
-      if (decodedHtml == null) return null;
-      return iframeFromHtmlString(decodedHtml, baseUrl);
+      if (decodedHtml == null) return fallback;
+      return iframeFromHtmlString(decodedHtml, baseUrl) ?? fallback;
     } catch (e) {
       logger.w('Otakudesu resolveMirrorEmbed gagal: $e');
-      return null;
+      return fallback;
     }
   }
 

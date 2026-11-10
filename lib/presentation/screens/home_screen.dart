@@ -12,6 +12,7 @@ import '../widgets/anime_grid.dart';
 import '../widgets/section_header.dart';
 import '../widgets/source_selector.dart';
 import 'detail_screen.dart';
+import 'ongoing_screen.dart';
 import 'schedule_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -71,12 +72,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
           ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      icon: const Icon(Icons.play_circle_outline),
+                      label: const Text('Ongoing'),
+                      onPressed: () => _openList(context, completed: false),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('Completed'),
+                      onPressed: () => _openList(context, completed: true),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           SliverToBoxAdapter(child: _LatestSection(source: _source)),
-          const SliverToBoxAdapter(
+          SliverToBoxAdapter(
             child: SectionHeader(
               title: 'Ongoing',
               subtitle: 'Sedang tayang dari sumber terpilih',
               icon: Icons.play_circle_outline,
+              onSeeAll: () => _openList(context, completed: false),
             ),
           ),
           SliverToBoxAdapter(child: _OngoingSection(source: _source)),
@@ -90,6 +116,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           SliverToBoxAdapter(child: _AltSourceSection(currentSource: _source)),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
+      ),
+    );
+  }
+
+  void _openList(BuildContext context, {required bool completed}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OngoingScreen(source: _source, isCompleted: completed),
       ),
     );
   }

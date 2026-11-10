@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../widgets/glass.dart';
 
 import '../../core/adblock/adblock_engine.dart';
 
@@ -13,7 +14,7 @@ class AdblockScreen extends StatelessWidget {
     final engine = AdblockEngine.instance;
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Pemblokir Iklan')),
+      appBar: GlassAppBar(title: const Text('Pemblokir Iklan')),
       body: ListenableBuilder(
         listenable: engine,
         builder: (context, _) {

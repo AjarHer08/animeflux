@@ -3,6 +3,7 @@ library;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/glass.dart';
 
 import '../../data/models/comic.dart';
 import '../../data/repositories/comic_repository.dart';
@@ -41,7 +42,7 @@ class _ComicDetailScreenState extends State<ComicDetailScreen> {
     final scheme = Theme.of(context).colorScheme;
     final headers = comicRepository.scraperFor(widget.comic.source).imageHeaders;
     return Scaffold(
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: Text(widget.comic.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(

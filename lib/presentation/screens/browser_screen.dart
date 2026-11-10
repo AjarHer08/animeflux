@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../widgets/glass.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -72,7 +73,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: GlassAppBar(
         title: Text(_title.isEmpty ? widget.title : _title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
