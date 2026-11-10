@@ -509,21 +509,86 @@ class AdblockEngine extends ChangeNotifier {
     }
     injectCss();
 
-    // Iklan video di dalam player embed (preroll VAST / overlay): klik tombol
-    // "Skip" otomatis dan sembunyikan overlay iklan yang umum.
+    // Iklan video di dalam player embed (preroll VAST / overlay "Iklan ini akan
+    // berakhir dalam N"): netralkan respons VAST, percepat video iklan sampai
+    // habis, dan klik tombol "Skip" bila ada.
     if (COSMETIC) {
+      // 1) Respons VAST/VMAP (XML iklan) diganti VAST kosong -> player tidak punya iklan.
+      try {
+        var vastRe = /<\s*(vmap:)?(VAST|VMAP)[\s>]/i;
+        var EMPTY_VAST = '<?xml version="1.0" encoding="UTF-8"?><VAST version="3.0"></VAST>';
+        var origFetch = window.fetch;
+        if (origFetch) {
+          window.fetch = function () {
+            return origFetch.apply(this, arguments).then(function (res) {
+              try {
+                var ct = (res.headers && res.headers.get('content-type')) || '';
+                if (/xml|text\/plain|text\/html/i.test(ct)) {
+                  return res.clone().text().then(function (t) {
+                    if (vastRe.test(t.slice(0, 800))) {
+                      return new Response(EMPTY_VAST, { status: 200, headers: { 'content-type': 'text/xml' } });
+                    }
+                    return res;
+                  }).catch(function () { return res; });
+                }
+              } catch (e) {}
+              return res;
+            });
+          };
+        }
+        var xhrOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function () {
+          var x = this;
+          x.addEventListener('readystatechange', function () {
+            if (x.readyState !== 4) return;
+            try {
+              var rt = x.responseType;
+              var t = (rt === '' || rt === 'text') ? x.responseText : '';
+              if (t && vastRe.test(t.slice(0, 800))) {
+                Object.defineProperty(x, 'responseText', { configurable: true, value: EMPTY_VAST });
+                Object.defineProperty(x, 'response', { configurable: true, value: EMPTY_VAST });
+                Object.defineProperty(x, 'responseXML', {
+                  configurable: true,
+                  value: new DOMParser().parseFromString(EMPTY_VAST, 'text/xml'),
+                });
+              }
+            } catch (e) {}
+          });
+          return xhrOpen.apply(this, arguments);
+        };
+      } catch (e) {}
+
+      // 2) Deteksi keadaan "sedang iklan": percepat video pendek sampai selesai & skip.
       try {
         var skipRe = /^\s*(skip( ad| ads)?( \d+)?|lewati( iklan)?|tutup iklan|close ad)\s*$/i;
+        var adTextRe = /iklan ini akan berakhir|iklan akan berakhir|ad will end|advertisement|ad ends in/i;
         var AD_SEL = '.jw-skip, .vjs-ad-skip-button, .videoAdUiSkipButton, .ytp-ad-skip-button, ' +
-          '.ima-ad-container, .ad-overlay, .vast-skip-button, .plyr__ads, [class*="adskip"], [id*="ad-skip"]';
+          '.vast-skip-button, [class*="adskip"], [id*="ad-skip"]';
         function tickAds() {
           try {
-            var btns = document.querySelectorAll(AD_SEL + ', button, div[role="button"], a');
+            var body = document.body;
+            if (!body) return;
+            var txt = body.innerText || '';
+            if (adTextRe.test(txt)) {
+              var vs = document.querySelectorAll('video');
+              for (var k = 0; k < vs.length; k++) {
+                var v = vs[k];
+                var d = v.duration;
+                // Iklan pendek (< 3 menit); episode asli jauh lebih panjang.
+                if (isFinite(d) && d > 0 && d < 180) {
+                  v.muted = true;
+                  try { v.playbackRate = 16; } catch (e) {}
+                  if (v.currentTime < d - 0.3) v.currentTime = d - 0.2;
+                }
+              }
+            }
+            var btns = document.querySelectorAll(AD_SEL + ', button, div[role="button"], a, span, div');
             for (var i = 0; i < btns.length; i++) {
               var b = btns[i];
+              if (b.children.length > 2) continue;
               var t = (b.textContent || '').trim();
-              if (t.length > 20) continue;
-              if (skipRe.test(t) || b.matches('.jw-skip, .vjs-ad-skip-button, .videoAdUiSkipButton, .ytp-ad-skip-button, .vast-skip-button')) {
+              if (t.length === 0 || t.length > 20) continue;
+              if (skipRe.test(t) || b.matches(AD_SEL)) {
                 var r = b.getBoundingClientRect();
                 if (r.width > 0 && r.height > 0) b.click();
               }
@@ -532,7 +597,7 @@ class AdblockEngine extends ChangeNotifier {
             for (var j = 0; j < ads.length; j++) ads[j].style.setProperty('display', 'none', 'important');
           } catch (e) {}
         }
-        setInterval(tickAds, 700);
+        setInterval(tickAds, 400);
       } catch (e) {}
     }
 

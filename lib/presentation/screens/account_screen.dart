@@ -17,11 +17,13 @@ class AccountScreen extends StatefulWidget {
 class _AccountScreenState extends State<AccountScreen> {
   final _name = TextEditingController();
   final _email = TextEditingController();
+  final _code = TextEditingController();
 
   @override
   void dispose() {
     _name.dispose();
     _email.dispose();
+    _code.dispose();
     super.dispose();
   }
 
@@ -43,6 +45,7 @@ class _AccountScreenState extends State<AccountScreen> {
               if (!account.isLoggedIn) ...[
                 TextField(
                   controller: _name,
+                  onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(labelText: 'Nama'),
                 ),
                 const SizedBox(height: 8),
@@ -51,10 +54,27 @@ class _AccountScreenState extends State<AccountScreen> {
                   keyboardType: TextInputType.emailAddress,
                   decoration: const InputDecoration(labelText: 'Email (opsional)'),
                 ),
+                if (AccountService.isAdminName(_name.text)) ...[
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _code,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Kode admin'),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: () async {
                     if (_name.text.trim().isEmpty) return;
+                    if (AccountService.isAdminName(_name.text)) {
+                      final ok = await account.loginAdmin(code: _code.text, email: _email.text);
+                      if (!ok && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Kode admin salah')),
+                        );
+                      }
+                      return;
+                    }
                     await account.login(name: _name.text, email: _email.text);
                   },
                   child: const Text('Masuk'),
@@ -70,7 +90,7 @@ class _AccountScreenState extends State<AccountScreen> {
                     subtitle: Text(
                       [
                         if ((account.email ?? '').isNotEmpty) account.email!,
-                        account.isVip ? 'Status: VIP' : 'Status: Gratis',
+                        account.isAdmin ? 'Status: Admin (VIP)' : (account.isVip ? 'Status: VIP' : 'Status: Gratis'),
                       ].join(' • '),
                     ),
                     trailing: TextButton(

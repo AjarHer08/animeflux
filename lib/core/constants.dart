@@ -2,7 +2,7 @@
 library;
 
 /// Versi aplikasi
-const String kAppVersion = '1.1.3';
+const String kAppVersion = '1.1.4';
 const String kAppName = 'AnimeFlux';
 
 /// Daftar sumber anime yang didukung.
@@ -84,3 +84,8 @@ const Map<String, String> kDefaultHeaders = {
   'Sec-Fetch-Site': 'none',
   'Sec-Fetch-User': '?1',
 };
+
+/// Akun admin lokal: masuk dengan nama [kAdminName] dan kode [kAdminCode]
+/// di layar Akun & Login. GANTI kode ini sebelum dibagikan ke orang lain.
+const String kAdminName = 'admin';
+const String kAdminCode = 'animeflux-admin';

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.4
+- Otakudesu: perbaikan error merah di detail/episode ("(dynamic) => dynamic is not a subtype of (String) => bool"): daftar episode kini bertipe Element.
+- Adblock player: respons VAST/VMAP diganti VAST kosong (fetch & XHR), video iklan pendek dipercepat sampai selesai saat teks "Iklan ini akan berakhir" muncul, tombol Skip diklik otomatis.
+- Akun admin lokal: masuk dengan nama `admin` + kode admin (lihat `kAdminCode` di lib/core/constants.dart). Admin otomatis berstatus VIP.
+
 ## 1.1.3
 - Komik: tiap sumber (Komikstation, Kiryuu, Komiku) kini punya kategori Semua / Manga / Manhwa / Manhua untuk Terbaru & Populer.
 - Komik: perbaikan error "Gagal memuat detail ... (dynamic) => dynamic is not a subtype of (String) => bool" (rantai map/where diganti loop bertipe eksplisit).

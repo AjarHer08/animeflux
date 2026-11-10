@@ -7,6 +7,7 @@
 /// tinggal update selector-nya — logic utama tidak perlu diubah.
 library;
 
+import 'package:html/dom.dart' as dom;
 import 'dart:convert';
 
 import '../../core/constants.dart';
@@ -109,7 +110,7 @@ class OtakudesuScraper implements BaseScraper {
 
     // Episode list — Otakudesu pakai <div class="episclick"> atau <ul class="episode-list">
     final episodes = <Episode>[];
-    var epLinks = <dynamic>[];
+    var epLinks = <dom.Element>[];
     for (final block in doc.querySelectorAll('div.episodelist')) {
       final head = cleanText(block.querySelector('span.monktit')?.text).toLowerCase();
       if (head.contains('batch') || head.contains('lengkap')) continue;
