@@ -2,7 +2,7 @@
 library;
 
 /// Versi aplikasi
-const String kAppVersion = '1.0.0';
+const String kAppVersion = '1.0.1';
 const String kAppName = 'AnimeFlux';
 
 /// Daftar sumber anime yang didukung.

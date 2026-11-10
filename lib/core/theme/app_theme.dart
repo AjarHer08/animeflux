@@ -254,7 +254,7 @@ ThemeData buildThemeData(ThemeConfig config) {
       foregroundColor: scheme.onSurface,
       centerTitle: false,
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 0,
       color: scheme.surfaceContainer,
       shape: RoundedRectangleBorder(
