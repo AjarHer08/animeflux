@@ -1,0 +1,47 @@
+# Build helper untuk AnimeFlux
+#
+# Maven Central rate-limit workaround (kalau di-build di IP yang rate-limit):
+#
+# 1. Edit android/settings.gradle, tambahkan maven aliyun di pluginManagement.repositories:
+#      repositories {
+#          maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+#          maven { url "https://maven.aliyun.com/repository/public" }
+#          google()
+#          mavenCentral()
+#          gradlePluginPortal()
+#      }
+#
+# 2. Edit android/build.gradle, tambahkan aliyun di allprojects.repositories:
+#      allprojects {
+#          repositories {
+#              maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+#              maven { url "https://maven.aliyun.com/repository/public" }
+#              google()
+#              mavenCentral()
+#          }
+#      }
+#
+# 3. Untuk sub-projects Flutter plugin (yang masih pakai Maven Central default),
+#    pakai init.gradle di ~/.gradle/init.d/init.gradle:
+#
+#      allprojects {
+#          buildscript {
+#              repositories {
+#                  maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+#                  maven { url "https://maven.aliyun.com/repository/public" }
+#                  google()
+#                  mavenCentral()
+#              }
+#          }
+#          repositories {
+#              maven { url "https://maven.aliyun.com/repository/gradle-plugin" }
+#              maven { url "https://maven.aliyun.com/repository/public" }
+#              google()
+#              mavenCentral()
+#          }
+#      }
+#
+# Catatan: init.gradle mungkin konflik dengan Flutter plugin-loader
+# yang set RepositoriesMode.PREFER_SETTINGS. Jika error:
+# "Build was configured to prefer settings repositories over project repositories",
+# hapus init.gradle dan retry build (biasanya Maven Central akan sehat lagi setelah beberapa menit).

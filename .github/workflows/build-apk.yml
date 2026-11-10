@@ -1,0 +1,88 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# Perlu untuk membuat GitHub Release dari tag v*
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Analyze & test tidak memblokir build APK, tapi hasilnya tampil di log.
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        continue-on-error: true
+
+      - name: Unit test
+        run: flutter test
+        continue-on-error: true
+
+      - name: Pastikan gradlew executable
+        run: chmod +x android/gradlew
+
+      # APK per-ABI (kecil) + APK universal. Release ditandatangani dengan debug key
+      # (lihat android/app/build.gradle) sehingga bisa langsung di-install.
+      - name: Build release APK (split per ABI)
+        run: flutter build apk --release --split-per-abi --no-tree-shake-icons
+
+      - name: Build release APK (universal)
+        run: flutter build apk --release --no-tree-shake-icons
+
+      - name: Siapkan artefak
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/AnimeFlux-universal.apk
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            f="build/app/outputs/flutter-apk/app-${abi}-release.apk"
+            if [ -f "$f" ]; then cp "$f" "dist/AnimeFlux-${abi}.apk"; fi
+          done
+          ls -lh dist
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: animeflux-apk
+          path: dist/*.apk
+          retention-days: 30
+
+      - name: Buat GitHub Release (hanya untuk tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
+          generate_release_notes: true
