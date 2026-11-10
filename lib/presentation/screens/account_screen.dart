@@ -1,13 +1,11 @@
-/// Akun & Login: profil lokal AnimeFlux + login ke situs sumber.
+/// Akun & Login: profil lokal AnimeFlux (login hanya di dalam aplikasi;
+/// situs sumber tidak punya login).
 library;
 
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../core/utils/account_service.dart';
-import '../../core/utils/session_store.dart';
 import '../widgets/glass.dart';
-import 'site_login_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -34,7 +32,7 @@ class _AccountScreenState extends State<AccountScreen> {
     return Scaffold(
       appBar: const GlassAppBar(title: Text('Akun & Login')),
       body: ListenableBuilder(
-        listenable: Listenable.merge([account, SessionStore.instance]),
+        listenable: account,
         builder: (context, _) {
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -87,38 +85,6 @@ class _AccountScreenState extends State<AccountScreen> {
                   child: Text(
                     'VIP AnimeFlux belum tersedia: butuh server akun yang belum terhubung.',
                     style: TextStyle(color: scheme.outline, fontSize: 12),
-                  ),
-                ),
-              const SizedBox(height: 24),
-              Text('Login situs sumber',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text(
-                'Dipakai kalau situs meminta login/VIP untuk membuka episode atau download.',
-                style: TextStyle(color: scheme.outline, fontSize: 12),
-              ),
-              const SizedBox(height: 8),
-              for (final s in SourceId.values)
-                Card(
-                  child: ListTile(
-                    leading: Icon(
-                      SessionStore.instance.isLoggedIn(s) ? Icons.lock_open : Icons.lock_outline,
-                      color: SessionStore.instance.isLoggedIn(s) ? scheme.primary : null,
-                    ),
-                    title: Text(s.label),
-                    subtitle: Text(SessionStore.instance.isLoggedIn(s) ? 'Sesi tersimpan' : 'Belum masuk'),
-                    trailing: SessionStore.instance.isLoggedIn(s)
-                        ? TextButton(
-                            onPressed: () => SessionStore.instance.logout(s),
-                            child: const Text('Keluar'),
-                          )
-                        : FilledButton.tonal(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => SiteLoginScreen(source: s)),
-                            ),
-                            child: const Text('Masuk'),
-                          ),
                   ),
                 ),
             ],

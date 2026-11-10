@@ -439,6 +439,10 @@ class AdblockEngine extends ChangeNotifier {
   /// True kalau URL termasuk iklan (dipakai untuk navigasi & popup).
   bool isBlocked(String url) => enabled && _rules.isBlocked(url);
 
+  /// Hitung request jaringan yang diblok tanpa memicu rebuild UI tiap request.
+  int blockedRequests = 0;
+  void noteBlockedQuiet() => blockedRequests++;
+
   void noteBlocked() {
     blockedCount++;
     notifyListeners();
@@ -504,6 +508,33 @@ class AdblockEngine extends ChangeNotifier {
       (document.head || document.documentElement).appendChild(st);
     }
     injectCss();
+
+    // Iklan video di dalam player embed (preroll VAST / overlay): klik tombol
+    // "Skip" otomatis dan sembunyikan overlay iklan yang umum.
+    if (COSMETIC) {
+      try {
+        var skipRe = /^\s*(skip( ad| ads)?( \d+)?|lewati( iklan)?|tutup iklan|close ad)\s*$/i;
+        var AD_SEL = '.jw-skip, .vjs-ad-skip-button, .videoAdUiSkipButton, .ytp-ad-skip-button, ' +
+          '.ima-ad-container, .ad-overlay, .vast-skip-button, .plyr__ads, [class*="adskip"], [id*="ad-skip"]';
+        function tickAds() {
+          try {
+            var btns = document.querySelectorAll(AD_SEL + ', button, div[role="button"], a');
+            for (var i = 0; i < btns.length; i++) {
+              var b = btns[i];
+              var t = (b.textContent || '').trim();
+              if (t.length > 20) continue;
+              if (skipRe.test(t) || b.matches('.jw-skip, .vjs-ad-skip-button, .videoAdUiSkipButton, .ytp-ad-skip-button, .vast-skip-button')) {
+                var r = b.getBoundingClientRect();
+                if (r.width > 0 && r.height > 0) b.click();
+              }
+            }
+            var ads = document.querySelectorAll('.ima-ad-container, .ad-overlay, .plyr__ads');
+            for (var j = 0; j < ads.length; j++) ads[j].style.setProperty('display', 'none', 'important');
+          } catch (e) {}
+        }
+        setInterval(tickAds, 700);
+      } catch (e) {}
+    }
 
     if (POPUP) {
       try { window.open = function () { return null; }; } catch (e) {}

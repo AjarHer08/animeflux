@@ -46,8 +46,8 @@ class OtakudesuScraper implements BaseScraper {
   @override
   Future<List<Anime>> getCompleted({int page = 1}) async {
     final url = page <= 1
-        ? '$baseUrl/completed-anime/'
-        : '$baseUrl/completed-anime/page/$page/';
+        ? '$baseUrl/complete-anime/'
+        : '$baseUrl/complete-anime/page/$page/';
     return _parseAnimeList(url);
   }
 
@@ -109,9 +109,17 @@ class OtakudesuScraper implements BaseScraper {
 
     // Episode list — Otakudesu pakai <div class="episclick"> atau <ul class="episode-list">
     final episodes = <Episode>[];
-    final epLinks = doc.querySelectorAll(
-      '#episodeList a, .episodelist ul li a, .eplister a, .episode-list a, ul.lcp_catlist a',
-    );
+    var epLinks = <dynamic>[];
+    for (final block in doc.querySelectorAll('div.episodelist')) {
+      final head = cleanText(block.querySelector('span.monktit')?.text).toLowerCase();
+      if (head.contains('batch') || head.contains('lengkap')) continue;
+      epLinks.addAll(block.querySelectorAll('ul li a'));
+    }
+    if (epLinks.isEmpty) {
+      epLinks = doc.querySelectorAll(
+        '#episodeList a, .episodelist ul li a, .eplister a, .episode-list a, ul.lcp_catlist a',
+      );
+    }
     for (final ep in epLinks) {
       final href = ep.attributes['href'];
       final title = cleanText(ep.text);
@@ -261,6 +269,40 @@ class OtakudesuScraper implements BaseScraper {
   @override
   Future<List<Anime>> search(String query) async {
     final url = '$baseUrl/?s=${Uri.encodeQueryComponent(query)}&post_type=anime';
+    final html = await _http.getHtml(url);
+    final doc = parseHtml(html);
+    final list = <Anime>[];
+    final seen = <String>{};
+    // Hasil pencarian Otakudesu: <ul class="chivsrc"><li><img><h2><a>judul</a></h2>
+    // <div class="set">Genres : ...</div><div class="set">Status : ...</div>
+    for (final li in doc.querySelectorAll('ul.chivsrc > li')) {
+      final a = li.querySelector('h2 a') ?? li.querySelector('a[href*="/anime/"]');
+      final href = a?.attributes['href'];
+      if (a == null || href == null || href.isEmpty) continue;
+      final title = cleanText(a.text);
+      if (title.isEmpty) continue;
+      final slug = href.split('/').where((s) => s.isNotEmpty).lastOrNull ?? href;
+      if (!seen.add(slug)) continue;
+      final img = li.querySelector('img');
+      String? status;
+      for (final set in li.querySelectorAll('.set')) {
+        final t = cleanText(set.text);
+        if (t.toLowerCase().startsWith('status')) {
+          status = cleanText(t.split(':').skip(1).join(':'));
+        }
+      }
+      list.add(Anime(
+        id: Anime.makeId(source, slug),
+        source: source,
+        title: title,
+        slug: slug,
+        url: href,
+        cover: img?.attributes['src'] ?? img?.attributes['data-src'],
+        status: status,
+      ));
+    }
+    if (list.isNotEmpty) return list;
+    // Cadangan kalau struktur tema berubah.
     return _parseHomeGrid(url);
   }
 
@@ -355,23 +397,31 @@ class OtakudesuScraper implements BaseScraper {
     final html = await _http.getHtml(url);
     final doc = parseHtml(html);
     final list = <Anime>[];
-    // Pola umum: list ongoing dengan .detpost
-    doc.querySelectorAll('.detpost, .chbox, .list-anime .col-md-4, .rapi .col').forEach((card) {
-      final a = card.querySelector('a');
-      final thumb = card.querySelector('img')?.attributes['src'];
-      final title = cleanText(card.querySelector('h2, .title, h3, .tt')?.text);
+    final seen = <String>{};
+    // Struktur Otakudesu: <div class="venz"><ul><li><div class="detpost">
+    //   <div class="thumb"><a href><div class="thumbz"><img><h2 class="jdlflm">judul</h2>
+    var cards = doc.querySelectorAll('.venz ul > li .detpost');
+    if (cards.isEmpty) {
+      cards = doc.querySelectorAll('.detpost, .chbox, .list-anime .col-md-4, .rapi .col');
+    }
+    for (final card in cards) {
+      final a = card.querySelector('.thumb a') ?? card.querySelector('a');
       final href = a?.attributes['href'];
-      if (href == null || title.isEmpty) return;
-      final slug = href.split('/').where((s) => s.isNotEmpty).lastOrNull;
+      final img = card.querySelector('img');
+      var title = cleanText(card.querySelector('h2.jdlflm, h2, .title, h3, .tt')?.text);
+      if (title.isEmpty) title = cleanText(img?.attributes['alt']);
+      if (href == null || href.isEmpty || title.isEmpty) continue;
+      final slug = href.split('/').where((s) => s.isNotEmpty).lastOrNull ?? href;
+      if (!seen.add(slug)) continue;
       list.add(Anime(
-        id: Anime.makeId(source, slug ?? href),
+        id: Anime.makeId(source, slug),
         source: source,
         title: title,
-        slug: slug ?? '',
+        slug: slug,
         url: href,
-        cover: thumb,
+        cover: img?.attributes['src'] ?? img?.attributes['data-src'],
       ));
-    });
+    }
     return list;
   }
 }

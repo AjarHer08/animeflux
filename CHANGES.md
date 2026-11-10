@@ -1,3 +1,12 @@
+# Changelog
+
+## 1.1.2
+- Otakudesu: pencarian memakai struktur hasil `ul.chivsrc`; Completed memakai path `/complete-anime/`; parser ongoing/completed dan daftar episode diperbaiki.
+- Login: hanya akun di dalam aplikasi. Login situs sumber (Otakudesu/Hidoristream/Lendrive) dihapus.
+- Liquid glass: nav bar jadi kapsul kaca melayang dengan blur + kilau sehingga terlihat.
+- Hidoristream: Ongoing/Completed memakai /anime/?status=ongoing|completed (paging ?page=N).
+- Adblock di mirror/stream: pemblokiran request Android via shouldInterceptRequest (contentBlockers hanya jalan di iOS) + auto-skip tombol "Skip" iklan.
+
 # Perubahan
 
 ## 1.1.1

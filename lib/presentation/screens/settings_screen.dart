@@ -213,7 +213,7 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.login),
                   title: const Text('Akun & Login'),
-                  subtitle: const Text('Profil, login situs sumber, status VIP'),
+                  subtitle: const Text('Profil & status VIP'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => Navigator.push(
                     context,

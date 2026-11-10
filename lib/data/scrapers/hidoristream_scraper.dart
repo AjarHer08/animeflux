@@ -32,13 +32,17 @@ class HidoristreamScraper implements BaseScraper {
 
   @override
   Future<List<Anime>> getOngoing({int page = 1}) async {
-    final url = page <= 1 ? '$baseUrl/daftar-ongoing' : '$baseUrl/daftar-ongoing?page=$page';
+    final url = page <= 1
+        ? '$baseUrl/anime/?status=ongoing'
+        : '$baseUrl/anime/?page=$page&status=ongoing';
     return _parseAnimeList(url);
   }
 
   @override
   Future<List<Anime>> getCompleted({int page = 1}) async {
-    final url = page <= 1 ? '$baseUrl/completed-anime' : '$baseUrl/completed-anime?page=$page';
+    final url = page <= 1
+        ? '$baseUrl/anime/?status=completed'
+        : '$baseUrl/anime/?page=$page&status=completed';
     return _parseAnimeList(url);
   }
 
@@ -368,8 +372,8 @@ class HidoristreamScraper implements BaseScraper {
   }
 
   Future<List<Anime>> _parseHomeGrid(String url) =>
-      _loadCards(url, '.rel, .rel1, .col-md-4, .col .rel, .lst, .card-anime, article, .item');
+      _loadCards(url, '.listupd article.bs, article.bs, .rel, .rel1, .col-md-4, .col .rel, .lst, .card-anime, article, .item');
 
   Future<List<Anime>> _parseAnimeList(String url) =>
-      _loadCards(url, '.col, .col-md-4, .rel, .list-anime .item, article, .item');
+      _loadCards(url, '.listupd article.bs, article.bs, .col, .col-md-4, .rel, .list-anime .item, article, .item');
 }

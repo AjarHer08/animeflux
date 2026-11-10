@@ -5,7 +5,6 @@ import 'package:dio/dio.dart';
 
 import '../../core/constants.dart';
 import 'logger.dart';
-import 'session_store.dart';
 import 'web_fetcher.dart';
 
 class HttpClient {
@@ -36,11 +35,6 @@ class HttpClient {
             kDesktopUserAgents[DateTime.now().microsecond % kDesktopUserAgents.length];
         // Jangan timpa header yang sudah diisi pemanggil (mis. Referer/Accept).
         kDefaultHeaders.forEach((k, v) => options.headers.putIfAbsent(k, () => v));
-        // Sesi login situs (kalau user sudah masuk lewat WebView).
-        if (options.headers['Cookie'] == null) {
-          final cookie = SessionStore.instance.cookieFor(options.uri.host);
-          if (cookie != null) options.headers['Cookie'] = cookie;
-        }
         if (options.headers['Referer'] == null) {
           options.headers['Referer'] = '${options.uri.origin}/';
         }

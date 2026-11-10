@@ -5,6 +5,7 @@
 library;
 
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -90,6 +91,10 @@ class _AdblockWebViewState extends State<AdblockWebView> {
             javaScriptCanOpenWindowsAutomatically: false,
             supportMultipleWindows: true,
             useShouldOverrideUrlLoading: true,
+            // contentBlockers hanya jalan di iOS. Di Android pemblokiran request
+            // (iklan video/VAST, script iklan, iframe iklan) harus lewat
+            // shouldInterceptRequest.
+            useShouldInterceptRequest: true,
             useOnDownloadStart: true,
             mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
             contentBlockers: _engine.contentBlockers,
@@ -99,6 +104,27 @@ class _AdblockWebViewState extends State<AdblockWebView> {
           onWebViewCreated: (c) {
             _controller = c;
             widget.onCreated?.call(c);
+          },
+          shouldInterceptRequest: (controller, request) async {
+            if (!_engine.enabled) return null;
+            final url = request.url.toString();
+            if (!url.startsWith('http')) return null;
+            // Jangan blok dokumen utama situs yang sedang dibuka.
+            if ((request.isForMainFrame ?? false) &&
+                _sameSite(request.url.host.toLowerCase(), _startHost)) {
+              return null;
+            }
+            if (_engine.isBlocked(url)) {
+              _engine.noteBlockedQuiet();
+              return WebResourceResponse(
+                contentType: 'text/plain',
+                contentEncoding: 'utf-8',
+                statusCode: 204,
+                reasonPhrase: 'No Content',
+                data: Uint8List(0),
+              );
+            }
+            return null;
           },
           shouldOverrideUrlLoading: (controller, action) async {
             final uri = action.request.url;
