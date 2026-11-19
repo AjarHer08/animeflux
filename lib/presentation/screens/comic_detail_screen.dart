@@ -1,8 +1,8 @@
 /// Detail komik — info, bookmark, daftar chapter.
 library;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../widgets/comic_cover.dart';
 import '../widgets/glass.dart';
 
 import '../../data/models/comic.dart';
@@ -40,7 +40,6 @@ class _ComicDetailScreenState extends State<ComicDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final headers = comicRepository.scraperFor(widget.comic.source).imageHeaders;
     return Scaffold(
       appBar: GlassAppBar(
         title: Text(widget.comic.title, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -83,14 +82,7 @@ class _ComicDetailScreenState extends State<ComicDetailScreen> {
                     child: SizedBox(
                       width: 120,
                       height: 170,
-                      child: comic.cover == null
-                          ? Container(color: scheme.surfaceContainerHighest)
-                          : CachedNetworkImage(
-                              imageUrl: comic.cover!,
-                              httpHeaders: headers,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Container(color: scheme.surfaceContainerHighest),
-                            ),
+                      child: ComicCover(comic: comic),
                     ),
                   ),
                   const SizedBox(width: 12),

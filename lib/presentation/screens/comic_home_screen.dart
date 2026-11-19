@@ -1,11 +1,11 @@
 /// Tab Komik — Terbaru / Populer / Bookmark + pencarian, per sumber.
 library;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../data/models/comic.dart';
 import '../../data/repositories/comic_repository.dart';
+import '../widgets/comic_cover.dart';
 import 'comic_detail_screen.dart';
 
 enum _Mode { latest, popular, bookmark }
@@ -285,7 +285,6 @@ class ComicCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final headers = comicRepository.scraperFor(comic.source).imageHeaders;
     return Material(
       color: scheme.surfaceContainer,
       borderRadius: BorderRadius.circular(12),
@@ -299,20 +298,7 @@ class ComicCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: comic.cover == null
-                  ? Container(
-                      color: scheme.surfaceContainerHighest,
-                      child: const Icon(Icons.menu_book, size: 40),
-                    )
-                  : CachedNetworkImage(
-                      imageUrl: comic.cover!,
-                      httpHeaders: headers,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
-                        color: scheme.surfaceContainerHighest,
-                        child: const Icon(Icons.broken_image),
-                      ),
-                    ),
+              child: ComicCover(comic: comic),
             ),
             Padding(
               padding: const EdgeInsets.all(8),

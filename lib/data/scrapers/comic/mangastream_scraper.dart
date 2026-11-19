@@ -52,7 +52,7 @@ class MangaStreamScraper extends ComicScraper {
         title: title.isEmpty ? titleFromSlug(slug) : title,
         slug: slug,
         url: abs,
-        cover: imgUrl(card.querySelector('img'), baseUrl),
+        cover: coverIn(card, baseUrl),
         latestChapter: cleanText(card.querySelector('.epxs')?.text),
         rating: double.tryParse(cleanText(card.querySelector('.numscore')?.text)),
         type: cleanText(card.querySelector('.type')?.text),

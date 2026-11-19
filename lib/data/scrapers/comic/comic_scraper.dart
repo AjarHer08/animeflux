@@ -65,19 +65,96 @@ List<String> uniqueTexts(dom.Document doc, String selector) {
   return out;
 }
 
-/// URL gambar dari <img> (menangani lazy-load & srcset).
-String? imgUrl(dom.Element? img, String base) {
-  if (img == null) return null;
-  for (final attr in const ['data-src', 'data-lazy-src', 'data-original', 'src']) {
-    final v = img.attributes[attr]?.trim();
-    if (v != null && v.isNotEmpty && !v.startsWith('data:')) {
-      return absoluteUrl(base, v);
+final RegExp _placeholderImg = RegExp(
+  r'(lazy|blank|placeholder|loading|spacer|pixel|transparent|default[-_]?(cover|thumb)|no[-_]?image|1x1)',
+  caseSensitive: false,
+);
+
+String? _firstFromSrcset(String? srcset) {
+  if (srcset == null || srcset.trim().isEmpty) return null;
+  // Pilih kandidat dengan lebar terbesar (deskriptor "w"), kalau tidak ada ambil yang pertama.
+  String? best;
+  double bestW = -1;
+  for (final part in srcset.split(RegExp(r',\s+|,(?=https?:)|,(?=/)'))) {
+    final bits = part.trim().split(RegExp(r'\s+'));
+    if (bits.isEmpty || bits.first.isEmpty || bits.first.startsWith('data:')) continue;
+    final w = bits.length > 1 ? (double.tryParse(bits[1].replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0) : 0.0;
+    if (best == null || w > bestW) {
+      best = bits.first;
+      bestW = w;
     }
   }
-  final srcset = img.attributes['srcset'] ?? img.attributes['data-srcset'];
-  if (srcset != null && srcset.trim().isNotEmpty) {
-    final first = srcset.split(',').first.trim().split(RegExp(r'\s+')).first;
-    if (first.isNotEmpty && !first.startsWith('data:')) return absoluteUrl(base, first);
+  return best;
+}
+
+String? _bgImage(dom.Element? el) {
+  final st = el?.attributes['style'];
+  if (st == null) return null;
+  final m = RegExp(r'url\(\s*["' "'" r']?([^"' "'" r')]+)["' "'" r']?\s*\)').firstMatch(st);
+  return m?.group(1);
+}
+
+/// URL gambar dari <img> (lazy-load, srcset, <picture>, background-image, noscript).
+String? imgUrl(dom.Element? img, String base) {
+  if (img == null) return null;
+  String? ok(String? v, {bool checkPlaceholder = false}) {
+    final t = v?.trim();
+    if (t == null || t.isEmpty || t.startsWith('data:') || t == '#') return null;
+    if (checkPlaceholder && _placeholderImg.hasMatch(t)) return null;
+    final abs = absoluteUrl(base, t);
+    return abs.isEmpty ? null : abs;
+  }
+
+  // Elemen bukan <img>: cari <img>/<source>/background di dalamnya.
+  if (img.localName != 'img') {
+    final inner = img.querySelector('img');
+    if (inner != null) return imgUrl(inner, base);
+    final fromSrc = ok(_firstFromSrcset(img.querySelector('source')?.attributes['srcset']));
+    if (fromSrc != null) return fromSrc;
+    return ok(_bgImage(img));
+  }
+
+  for (final attr in const [
+    'data-src',
+    'data-lazy-src',
+    'data-original',
+    'data-cfsrc',
+    'data-lazyload',
+    'data-wpfc-original-src',
+    'data-img',
+    'data-thumb',
+  ]) {
+    final r = ok(img.attributes[attr]);
+    if (r != null) return r;
+  }
+  final fromSet = ok(_firstFromSrcset(img.attributes['data-srcset'] ?? img.attributes['srcset']));
+  if (fromSet != null) return fromSet;
+  final direct = ok(img.attributes['src'], checkPlaceholder: true);
+  if (direct != null) return direct;
+  final pic = img.parent;
+  if (pic != null && pic.localName == 'picture') {
+    final s = ok(_firstFromSrcset(pic.querySelector('source')?.attributes['srcset']));
+    if (s != null) return s;
+  }
+  final ns = img.parent?.querySelector('noscript');
+  if (ns != null) {
+    final m = RegExp(r'src=["' "'" r']([^"' "'" r']+)["' "'" r']').firstMatch(ns.text);
+    final r = ok(m?.group(1));
+    if (r != null) return r;
+  }
+  return ok(img.attributes['src']);
+}
+
+/// Cari cover di dalam sebuah kartu: <img>, <picture>, atau background-image.
+String? coverIn(dom.Element? card, String base) {
+  if (card == null) return null;
+  final r = imgUrl(card.querySelector('img'), base);
+  if (r != null) return r;
+  final pic = imgUrl(card.querySelector('picture'), base);
+  if (pic != null) return pic;
+  for (final e in card.querySelectorAll('[style*="url("]')) {
+    final b = imgUrl(e, base);
+    if (b != null) return b;
   }
   return null;
 }
@@ -123,7 +200,7 @@ List<Comic> parseComicLinks(dom.Document doc, String base, ComicSourceId source)
     final d = drafts.putIfAbsent(slug, () => _Draft(slug, url, a));
 
     final img = a.querySelector('img');
-    d.cover ??= imgUrl(img, base);
+    d.cover ??= coverIn(a, base);
 
     String? cand = a.attributes['title']?.trim();
     if (cand == null || cand.isEmpty) {
@@ -149,7 +226,7 @@ List<Comic> parseComicLinks(dom.Document doc, String base, ComicSourceId source)
     if (cover == null) {
       dom.Element? p = d.firstAnchor.parent;
       for (var i = 0; i < 4 && p != null && cover == null; i++) {
-        cover = imgUrl(p.querySelector('img'), base);
+        cover = coverIn(p, base);
         p = p.parent;
       }
     }

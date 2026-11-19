@@ -47,3 +47,12 @@
 - **Pemblokir iklan** (`lib/core/adblock`), pengaturan di Pengaturan > Ekstensi.
 - Fallback WebView headless untuk situs ber-Cloudflare.
 - CI: APK per-ABI + universal, release otomatis untuk tag `v*`.
+
+## Perbaikan thumbnail tab Komik
+- Parser cover lebih tangguh (lazy-load, srcset, picture, background-image, noscript, abaikan placeholder).
+- Widget baru ComicCover: coba ulang tanpa Referer, dan ambil cover dari halaman detail bila kosong.
+
+## Perbaikan gagal install saat update
+- Penyebab: APK release ditandatangani debug key acak per build GitHub Actions + campuran APK split/universal (versionCode beda).
+- Kini: keystore tetap android/app/animeflux.jks, hanya APK universal dirilis. Naikkan angka setelah "+" di pubspec.yaml tiap rilis.
+- PENTING: pemasangan pertama dengan kunci baru butuh uninstall versi lama sekali; setelah itu update normal.

@@ -39,10 +39,21 @@ android {
         multiDexEnabled = true
     }
 
+    // Keystore TETAP (di-commit) supaya tanda tangan APK sama di setiap build
+    // GitHub Actions. Tanpa ini, tiap build memakai debug key acak sehingga
+    // APK versi baru GAGAL dipasang sebagai pembaruan ("aplikasi tidak terpasang").
+    signingConfigs {
+        release {
+            storeFile file("animeflux.jks")
+            storePassword "animeflux123"
+            keyAlias "animeflux"
+            keyPassword "animeflux123"
+        }
+    }
+
     buildTypes {
         release {
-            // Untuk debug build, pakai debug signing. Untuk release via CI, generate keystore.
-            signingConfig = signingConfigs.debug
+            signingConfig = signingConfigs.release
             minifyEnabled = false
             shrinkResources = false
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"

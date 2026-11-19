@@ -45,7 +45,7 @@ class KomikuScraper extends ComicScraper {
             title: title.isEmpty ? titleFromSlug(slug) : title,
             slug: slug,
             url: abs,
-            cover: imgUrl(card.querySelector('.bgei img, img'), baseUrl),
+            cover: coverIn(card.querySelector('.bgei'), baseUrl) ?? coverIn(card, baseUrl),
             type: cleanText(card.querySelector('.tpe1_inf b')?.text),
             latestChapter: cleanText(card.querySelector('.new1 a span:last-child, .new1')?.text),
           ));

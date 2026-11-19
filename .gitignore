@@ -27,3 +27,6 @@ android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 android/local.properties
 .flutter-plugins
 .flutter-plugins-dependencies
+
+# Keystore tetap untuk tanda tangan rilis (sengaja di-commit)
+!android/app/animeflux.jks
