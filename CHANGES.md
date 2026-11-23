@@ -62,5 +62,5 @@
 - Kini: keystore tetap android/app/animeflux.jks, hanya APK universal dirilis. Naikkan angka setelah "+" di pubspec.yaml tiap rilis.
 - PENTING: pemasangan pertama dengan kunci baru butuh uninstall versi lama sekali; setelah itu update normal.
 
-## v1.1.8
+## 1.1.8
 - Dukungan Android TV
