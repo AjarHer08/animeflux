@@ -61,3 +61,6 @@
 - Penyebab: APK release ditandatangani debug key acak per build GitHub Actions + campuran APK split/universal (versionCode beda).
 - Kini: keystore tetap android/app/animeflux.jks, hanya APK universal dirilis. Naikkan angka setelah "+" di pubspec.yaml tiap rilis.
 - PENTING: pemasangan pertama dengan kunci baru butuh uninstall versi lama sekali; setelah itu update normal.
+
+## v1.1.8
+- Dukungan Android TV
