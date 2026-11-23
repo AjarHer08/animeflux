@@ -145,16 +145,77 @@ String? imgUrl(dom.Element? img, String base) {
   return ok(img.attributes['src']);
 }
 
+/// Gambar bendera / ikon tipe di dalam kartu komik. Tema MangaStream
+/// menaruhnya SEBELUM cover asli, jadi kalau tidak difilter, thumbnail yang
+/// tampil adalah bendera Korea/China/Jepang.
+final RegExp _flagImg = RegExp(
+  r'(/flags?/|flag[-_]?(kr|cn|jp|id|ko|zh|ja)\b|bendera|country[-_]?(flag|icon))',
+  caseSensitive: false,
+);
+
+String? _coverCandidate(dom.Element el, String base) {
+  final url = imgUrl(el, base);
+  if (url == null) return null;
+  if (_flagImg.hasMatch(url)) return null;
+  if (_flagImg.hasMatch(el.attributes['alt'] ?? '')) return null;
+  if (_flagImg.hasMatch(el.attributes['class'] ?? '')) return null;
+  return url;
+}
+
+/// Apakah elemen ini penanda cover utama (bukan thumbnail/ikon).
+bool _isMainCover(dom.Element el) {
+  final cls = el.attributes['class'] ?? '';
+  return cls.contains('ts-post-image') ||
+      cls.contains('wp-post-image') ||
+      (el.attributes['itemprop'] ?? '') == 'image';
+}
+
 /// Cari cover di dalam sebuah kartu: <img>, <picture>, atau background-image.
+/// Bendera/ikon tipe dilewati; cover utama (ts-post-image) diprioritaskan.
 String? coverIn(dom.Element? card, String base) {
   if (card == null) return null;
-  final r = imgUrl(card.querySelector('img'), base);
-  if (r != null) return r;
-  final pic = imgUrl(card.querySelector('picture'), base);
-  if (pic != null) return pic;
+
+  String? fallback;
+  for (final img in card.querySelectorAll('img')) {
+    final u = _coverCandidate(img, base);
+    if (u == null) continue;
+    if (_isMainCover(img)) return u;
+    fallback ??= u;
+  }
+  if (fallback != null) return fallback;
+
   for (final e in card.querySelectorAll('[style*="url("]')) {
-    final b = imgUrl(e, base);
+    final b = _coverCandidate(e, base);
     if (b != null) return b;
+  }
+  return null;
+}
+
+final RegExp _typeWord = RegExp(r'\b(manga|manhwa|manhua)\b', caseSensitive: false);
+
+String? _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).toLowerCase();
+
+/// Tipe komik dari kartu daftar (badge "Manga"/"Manhwa"/"Manhua").
+String? typeFromElement(dom.Element? card) {
+  if (card == null) return null;
+  final cls = _typeWord.firstMatch(card.attributes['class'] ?? '');
+  if (cls != null) return _cap(cls.group(1)!);
+  for (final el in card.querySelectorAll('span, div, b, a, strong')) {
+    final t = cleanText(el.text);
+    if (t.isEmpty || t.length > 12) continue;
+    final m = _typeWord.firstMatch(t);
+    if (m == null) continue;
+    if (t.toLowerCase() == m.group(1)!.toLowerCase()) return _cap(m.group(1)!);
+  }
+  // Tema Kiryuu memakai ikon SVG: .../static/svg/manhwa.svg alt="manhwa".
+  for (final img in card.querySelectorAll('img')) {
+    final alt = (img.attributes['alt'] ?? '').trim();
+    final mAlt = RegExp(r'^(manga|manhwa|manhua)$', caseSensitive: false).firstMatch(alt);
+    if (mAlt != null) return _cap(mAlt.group(1)!);
+    final src = img.attributes['src'] ?? img.attributes['data-src'] ?? '';
+    if (!src.contains('/svg/') && !src.contains('type')) continue;
+    final m = _typeWord.firstMatch(src);
+    if (m != null) return _cap(m.group(1)!);
   }
   return null;
 }
@@ -216,8 +277,9 @@ List<Comic> parseComicLinks(dom.Document doc, String base, ComicSourceId source)
       if (t.isNotEmpty && t.length < 100 && !_junkTitle.hasMatch(t)) cand = t;
     }
     if ((d.title == null || d.title!.isEmpty) && cand != null && cand.isNotEmpty) {
-      d.title = cleanText(cand);
+      d.title = cleanTitle(cand);
     }
+    d.type ??= typeFromElement(a) ?? typeFromElement(a.parent);
   }
 
   final out = <Comic>[];
@@ -237,6 +299,7 @@ List<Comic> parseComicLinks(dom.Document doc, String base, ComicSourceId source)
       slug: d.slug,
       url: d.url,
       cover: cover,
+      type: d.type,
     ));
   }
   return out;

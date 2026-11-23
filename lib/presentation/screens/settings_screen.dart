@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/adblock/adblock_engine.dart';
 import '../../core/constants.dart';
@@ -286,6 +287,36 @@ class SettingsScreen extends ConsumerWidget {
 
             const SizedBox(height: 16),
 
+            // === Dukungan ===
+            _SectionCard(
+              title: 'Dukung AnimeFlux',
+              icon: Icons.favorite,
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.coffee),
+                  title: const Text('Saweria'),
+                  subtitle: const Text(
+                      '$kSaweriaHandle — traktir developer secangkir kopi'),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: () => _openSaweria(context),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _openSaweria(context),
+                      icon: const Icon(Icons.volunteer_activism),
+                      label: const Text('Sawer sekarang'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
             // === Reset ===
             _SectionCard(
               title: 'Data',
@@ -392,6 +423,23 @@ class SettingsScreen extends ConsumerWidget {
       return dest;
     } catch (_) {
       return pickedPath;
+    }
+  }
+
+  /// Buka halaman Saweria di browser eksternal (atau in-app kalau tidak ada
+  /// browser yang bisa menangani intent).
+  Future<void> _openSaweria(BuildContext context) async {
+    final uri = Uri.parse(kSaweriaUrl);
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Tidak bisa membuka $kSaweriaUrl: $e')),
+      );
     }
   }
 

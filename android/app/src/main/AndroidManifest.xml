@@ -30,6 +30,14 @@
     <!-- Notifikasi untuk download progress -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Android TV: jalan di perangkat leanback tanpa layar sentuh -->
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.VIEW" />
@@ -49,6 +57,7 @@
         android:label="AnimeFlux"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner"
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
         android:allowBackup="true"
@@ -74,6 +83,12 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Launcher Android TV -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 

@@ -51,7 +51,6 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Duration _duration = Duration.zero;
   bool _showControls = true;
   Timer? _hideTimer;
-  bool _landscape = false;
   int _lastSavedSecond = -100;
   bool _playing = false;
 
@@ -308,10 +307,43 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     await _player.seek(cur + const Duration(seconds: 85));
   }
 
+  /// Tombol remote Android TV: OK/Enter = play-pause, panah kiri/kanan = seek.
+  KeyEventResult _onRemoteKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.mediaPlayPause ||
+        key == LogicalKeyboardKey.space) {
+      _player.playOrPause();
+      return KeyEventResult.handled;
+    }
+    final size = MediaQuery.sizeOf(context);
+    if (size.width > size.height) {
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        _player.seek(_player.state.position - const Duration(seconds: 10));
+        _showHideControls();
+        return KeyEventResult.handled;
+      }
+      if (key == LogicalKeyboardKey.arrowRight) {
+        _player.seek(_player.state.position + const Duration(seconds: 10));
+        _showHideControls();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final size = MediaQuery.sizeOf(context);
+    final isLandscape = size.width > size.height;
+    final videoHeight = isLandscape
+        ? size.height
+        : (size.width * 9 / 16).clamp(0.0, size.height * 0.65).toDouble();
 
     final playerArea = Stack(
       children: [
@@ -330,6 +362,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               onTap: _showHideControls,
               child: Video(
                 controller: _controller,
+                // Kontrol bawaan media_kit dimatikan: aplikasi ini memakai
+                // kontrol sendiri, dan overlay bawaan ikut dihitung ulang saat
+                // rotasi sehingga bisa menutupi surface video.
+                controls: NoVideoControls,
                 fit: BoxFit.contain,
                 fill: Colors.black,
               ),
@@ -392,14 +428,33 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: isLandscape
-            ? playerArea
-            : Column(
-                children: [
-                  AspectRatio(aspectRatio: 16 / 9, child: playerArea),
-                  Expanded(child: _buildBottomInfo(scheme)),
-                ],
+        child: Focus(
+          autofocus: true,
+          onKeyEvent: _onRemoteKey,
+          child: Stack(
+            children: [
+              // Video SELALU menempati slot pertama di tree yang sama; saat
+              // rotasi hanya tingginya yang berubah. Dulu video dipindah ke
+              // branch lain (Column <-> Stack), sehingga platform view
+              // media_kit dibuat ulang dan layar jadi putih/crash.
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: videoHeight,
+                child: playerArea,
               ),
+              if (!isLandscape)
+                Positioned(
+                  top: videoHeight,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildBottomInfo(scheme),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -476,15 +531,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
               ),
               IconButton(
                 icon: Icon(isLandscape ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white),
+                tooltip: isLandscape ? 'Keluar layar penuh' : 'Layar penuh',
                 onPressed: () {
-                  setState(() => _landscape = !_landscape);
-                  if (_landscape) {
+                  if (isLandscape) {
                     SystemChrome.setPreferredOrientations([
-                      DeviceOrientation.landscapeLeft,
+                      DeviceOrientation.portraitUp,
                     ]);
                   } else {
                     SystemChrome.setPreferredOrientations([
-                      DeviceOrientation.portraitUp,
+                      DeviceOrientation.landscapeLeft,
+                      DeviceOrientation.landscapeRight,
                     ]);
                   }
                 },

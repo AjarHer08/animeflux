@@ -97,7 +97,7 @@ class HidoristreamScraper implements BaseScraper {
     final episodes = <Episode>[];
     doc.querySelectorAll('.eplister a, .episode-list a, .episodelist a, ul#episodes li a').forEach((a) {
       final href = a.attributes['href'];
-      final title = cleanText(a.text);
+      final title = cleanTitle(a.text);
       if (href == null || title.isEmpty) return;
       final numberMatch = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(title);
       episodes.add(Episode(
@@ -117,7 +117,7 @@ class HidoristreamScraper implements BaseScraper {
       final seen = <String>{};
       for (final a in doc.querySelectorAll('a[href]')) {
         final href = a.attributes['href'] ?? '';
-        final title = cleanText(a.text);
+        final title = cleanTitle(a.text);
         if (href.isEmpty || href == '#' || title.isEmpty) continue;
         final looksEp = RegExp(r'(episode|/eps?[-/]|-ep-|nonton|/watch)', caseSensitive: false)
                 .hasMatch(href) ||
@@ -295,7 +295,7 @@ class HidoristreamScraper implements BaseScraper {
       if (daySection == null) continue;
       daySection.querySelectorAll('a').forEach((a) {
         final href = a.attributes['href'];
-        final title = cleanText(a.text);
+        final title = cleanTitle(a.text);
         if (title.isNotEmpty) {
           entries.add(ScheduleEntry(
             source: source,
@@ -348,7 +348,7 @@ class HidoristreamScraper implements BaseScraper {
       final a = card.querySelector('a[href]');
       final href = a?.attributes['href'];
       if (a == null || href == null || href.isEmpty || href == '#') continue;
-      final title = cleanText(
+      final title = cleanTitle(
         card.querySelector('h2, h3, .title, .tt, .ttls')?.text ??
             a.attributes['title'] ??
             card.querySelector('img')?.attributes['alt'] ??

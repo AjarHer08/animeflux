@@ -15,6 +15,20 @@ String cleanText(String? raw) {
   return t;
 }
 
+/// Bersihkan judul dari tag HTML yang ikut ter-escape.
+///
+/// Sebagian situs menyimpan judul episode sebagai HTML yang di-escape
+/// (`&lt;img src="..."&gt;Title`), sehingga setelah entity di-decode judulnya
+/// tampil sebagai kode mentah. Fungsi ini membuang tag tersebut.
+String cleanTitle(String? raw) {
+  var t = cleanText(raw);
+  if (t.contains('<')) {
+    t = t.replaceAll(RegExp(r'<[^>]*>?'), ' ');
+    t = cleanText(t);
+  }
+  return t;
+}
+
 /// Parse HTML string ke [dom.Document]
 dom.Document parseHtml(String html) => HtmlParser(html).parse();
 
