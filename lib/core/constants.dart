@@ -2,7 +2,7 @@
 library;
 
 /// Versi aplikasi
-const String kAppVersion = '1.1.7';
+const String kAppVersion = '1.1.8';
 const String kAppName = 'AnimeFlux';
 
 /// Dukungan pengguna / donasi (Saweria).

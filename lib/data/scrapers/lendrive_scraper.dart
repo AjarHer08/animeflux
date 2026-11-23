@@ -1,6 +1,15 @@
-/// Scraper untuk Lendrive (lendrive.web.id)
-/// Lendrive fokus ke download MKV/MP4 720p/1080p HEVC.
+/// Scraper untuk Lendrive (lendrive.web.id).
+///
+/// Lendrive memakai tema WordPress "Themesia":
+///  - Daftar anime : `article.bs` -> `a[itemprop="url"]`, `img.ts-post-image`
+///  - Katalog      : /anime/?status=...&type=&order=update (paginated /anime/page/N/)
+///  - Detail       : `.infox` (info + genre), `.eplister` (daftar episode)
+///  - Episode      : `.soraurlx` (blok resolusi + link file-host)
+///
+/// Lendrive fokus ke download MKV/MP4 720p/1080p HEVC, bukan streaming.
 library;
+
+import 'package:html/dom.dart' as dom;
 
 import '../../core/constants.dart';
 import '../../core/utils/html_utils.dart';
@@ -21,171 +30,231 @@ class LendriveScraper implements BaseScraper {
 
   final _http = HttpClient.instance;
 
+  /// Katalog seri (bukan halaman home, yang isinya episode lepas).
+  String _catalogUrl({String? status, int page = 1}) {
+    final path = page <= 1 ? '$baseUrl/anime/' : '$baseUrl/anime/page/$page/';
+    final filter = (status == null || status.isEmpty)
+        ? 'status&type=&order=update'
+        : 'status=$status&type=&order=update';
+    return '$path?$filter';
+  }
+
   @override
   Future<List<Anime>> getLatest({int page = 1}) async {
-    final url = page <= 1 ? '$baseUrl/' : '$baseUrl/home?page=$page';
-    return _parseHomeGrid(url);
+    return _parseCards(_catalogUrl(page: page));
   }
 
   @override
   Future<List<Anime>> getOngoing({int page = 1}) async {
-    final url = page <= 1 ? '$baseUrl/ongoing' : '$baseUrl/ongoing?page=$page';
-    return _parseAnimeList(url);
+    return _parseCards(_catalogUrl(status: 'ongoing', page: page));
   }
 
   @override
   Future<List<Anime>> getCompleted({int page = 1}) async {
-    final url = page <= 1 ? '$baseUrl/completed' : '$baseUrl/completed?page=$page';
-    return _parseAnimeList(url);
+    return _parseCards(_catalogUrl(status: 'completed', page: page));
   }
 
   @override
   Future<Anime> getDetail(Anime anime) async {
-    final html = await _http.getHtml(anime.url);
-    final doc = parseHtml(html);
+    final doc = parseHtml(await _http.getHtml(anime.url));
+    final info = doc.querySelector('.infox') ??
+        doc.querySelector('.anime-info') ??
+        doc.querySelector('.bixbox.animefull');
 
-    // Lendrive pakai format berbeda: biasanya content text-based dengan link
-    final infoSection = doc.querySelector('.anime-info, .infox, .anime-detail, .detail-info, .entry-content');
-    final genres = <Genre>[];
-    String? status, type, totalEps, score, studio, release, season;
-    if (infoSection != null) {
-      // Pattern: "Status: Ongoing"
-      final stMatch = RegExp(r'status\s*:?\s*(\w+)', caseSensitive: false).firstMatch(infoSection.text);
-      if (stMatch != null) status = cleanText(stMatch.group(1));
-      final tyMatch = RegExp(r'type\s*:?\s*(\w+)', caseSensitive: false).firstMatch(infoSection.text);
-      if (tyMatch != null) type = cleanText(tyMatch.group(1));
-      final epMatch = RegExp(r'(?:total\s*eps(?:ode)?|eps(?:ode)?)\s*:?\s*(\d+)', caseSensitive: false).firstMatch(infoSection.text);
-      if (epMatch != null) totalEps = epMatch.group(1);
-      // Genres dari link
-      infoSection.querySelectorAll('a').forEach((a) {
-        final href = a.attributes['href'] ?? '';
-        if (href.contains('/genres/') || href.contains('/genre/')) {
-          final name = cleanText(a.text);
-          if (name.isNotEmpty && !genres.any((g) => g.name == name)) {
-            genres.add(Genre(name: name, url: href));
-          }
-        }
-      });
+    String textOf(String selector) =>
+        cleanText(doc.querySelector(selector)?.text);
+
+    String? status, type, studio, release, season, duration;
+    int? totalEps;
+    double? score;
+
+    void readInfo(String raw) {
+      final idx = raw.indexOf(':');
+      if (idx <= 0) return;
+      final label = raw.substring(0, idx).trim().toLowerCase();
+      final value = raw.substring(idx + 1).trim();
+      if (value.isEmpty || value == '?' || value == '-') return;
+      switch (label) {
+        case 'status':
+          status = value;
+        case 'type':
+          type = value;
+        case 'studio':
+          studio = value;
+        case 'released':
+        case 'release':
+        case 'released on':
+          release = value;
+        case 'season':
+          season = value;
+        case 'duration':
+          duration = value;
+        case 'total episode':
+        case 'episodes':
+          totalEps = int.tryParse(RegExp(r'\d+').stringMatch(value) ?? '');
+        case 'score':
+          score = double.tryParse(RegExp(r'[\d.]+').stringMatch(value) ?? '');
+      }
     }
 
-    final synopsis = cleanText(
-      doc.querySelector('.sinopsis, .desc, .sinopc, .entry-content p')?.text,
-    );
-
-    // Episode list — Lendrive biasanya per episode link atau batch per season
-    final episodes = <Episode>[];
-    doc.querySelectorAll('.eplister a, .episode-list a, .episodelist a, .entry-content a, table a, ul li a')
-        .forEach((a) {
-      final href = a.attributes['href'] ?? '';
-      final title = cleanText(a.text);
-      // Filter: hanya link yang mengandung "episode" atau "batch"
-      if (href.contains(baseUrl) &&
-          (title.toLowerCase().contains('episode') ||
-              title.toLowerCase().contains('eps') ||
-              title.toLowerCase().contains('batch'))) {
-        final numberMatch = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(title);
-        episodes.add(Episode(
-          id: '${anime.id}::${href.hashCode}',
-          animeId: anime.id,
-          source: source,
-          title: title,
-          slug: href.split('/').where((s) => s.isNotEmpty).lastOrNull,
-          url: href,
-          number: numberMatch?.group(1),
-        ));
+    if (info != null) {
+      for (final span in info.querySelectorAll('.spe span, .info-content span')) {
+        readInfo(cleanText(span.text));
       }
-    });
+    }
+
+    // Rating tampil sebagai "Rating 8.73".
+    if (score == null) {
+      final ratingText = textOf('.rating strong, .rating');
+      final m = RegExp(r'([\d.]+)').firstMatch(ratingText);
+      score = double.tryParse(m?.group(1) ?? '');
+    }
+
+    final genres = <Genre>[];
+    for (final a in (info ?? doc).querySelectorAll('.genxed a[href]')) {
+      final name = cleanText(a.text);
+      final href = a.attributes['href'];
+      if (name.isEmpty || href == null) continue;
+      if (genres.any((g) => g.name == name)) continue;
+      genres.add(Genre(
+        name: name,
+        slug: Uri.tryParse(href)?.pathSegments.where((s) => s.isNotEmpty).last,
+        url: href,
+      ));
+    }
+
+    final synp = doc.querySelector('.synp .entry-content') ??
+        doc.querySelector('.synp') ??
+        doc.querySelector('.desc');
+    var synopsis = '';
+    if (synp != null) {
+      final paras = synp
+          .querySelectorAll('p')
+          .map((p) => cleanText(p.text))
+          .where((t) => t.isNotEmpty)
+          .toList();
+      synopsis = paras.isNotEmpty ? paras.join('\n\n') : cleanText(synp.text);
+    }
+
+    // Daftar episode: .eplister ul li a dengan .epl-num / .epl-title / .epl-date.
+    final episodes = <Episode>[];
+    final seenEp = <String>{};
+    for (final a in doc.querySelectorAll('.eplister a[href]')) {
+      final href = a.attributes['href'];
+      if (href == null || href.isEmpty || href == '#') continue;
+      final url = absoluteUrl(baseUrl, href);
+      if (url.isEmpty || !seenEp.add(url)) continue;
+
+      final number = cleanText(a.querySelector('.epl-num')?.text);
+      final rawTitle = cleanText(a.querySelector('.epl-title')?.text);
+      final date = cleanText(a.querySelector('.epl-date')?.text);
+      final title = rawTitle.isNotEmpty
+          ? _episodeTitle(cleanTitle(rawTitle))
+          : 'Episode $number';
+
+      episodes.add(Episode(
+        id: '${anime.id}::${url.hashCode}',
+        animeId: anime.id,
+        source: source,
+        title: title.isEmpty ? 'Episode $number' : title,
+        slug: Uri.tryParse(url)?.pathSegments.where((s) => s.isNotEmpty).lastOrNull,
+        url: url,
+        number: number.isEmpty ? _numberFromTitle(title) : number,
+        releasedAt: date.isEmpty ? null : date,
+      ));
+    }
+
+    final title = textOf('h1.entry-title');
+    final altTitle = textOf('.infox .alter, .alter');
+    final cover = doc.querySelector('.thumbook img, .thumb img')?.attributes['src'] ??
+        anime.cover;
+    final banner = doc
+            .querySelector('.bigcontent .thumbnail img, .entry-content .thumbnail img, .banner img')
+            ?.attributes['src'] ??
+        anime.banner;
 
     return anime.copyWith(
+      title: title.isNotEmpty ? title : anime.title,
+      altTitle: altTitle.isNotEmpty ? altTitle : anime.altTitle,
+      cover: cover,
+      banner: banner,
       status: status ?? anime.status,
       type: type ?? anime.type,
-      totalEpisodes: totalEps != null ? int.tryParse(totalEps) : anime.totalEpisodes,
+      studio: studio ?? anime.studio,
+      releaseDate: release ?? anime.releaseDate,
+      season: season ?? anime.season,
+      totalEpisodes: totalEps ?? anime.totalEpisodes,
+      score: score ?? anime.score,
       genres: genres.isNotEmpty ? genres : anime.genres,
       synopsis: synopsis.isNotEmpty ? synopsis : anime.synopsis,
       episodes: episodes,
+      episodeCount: episodes.isNotEmpty ? episodes.length : anime.episodeCount,
     );
   }
 
   @override
   Future<Episode> getEpisodeDetail(Episode episode) async {
-    final html = await _http.getHtml(episode.url);
-    final doc = parseHtml(html);
+    final doc = parseHtml(await _http.getHtml(episode.url));
 
-    final mirrors = <StreamMirror>[];
     final downloads = <DownloadOption>[];
-    final seenDl = <String>{};
+    final seen = <String>{};
 
-    void addDownload(String? href, String resLabel, String text) {
-      if (href == null || href.isEmpty || href == '#' || href.startsWith('javascript:')) return;
-      final url = absoluteUrl(baseUrl, href);
-      if (url.isEmpty || !seenDl.add(url)) return;
-      final label = text.isEmpty ? resLabel : (resLabel.isEmpty ? text : '$resLabel $text');
+    void add(String? href, String qualityLabel, String hostName) {
+      if (href == null) return;
+      final raw = href.trim();
+      if (raw.isEmpty || raw == '#' || raw.startsWith('javascript:')) return;
+      final url = absoluteUrl(baseUrl, raw);
+      if (url.isEmpty || !seen.add(url)) return;
+      final host = detectServer(url);
+      final label = [
+        if (qualityLabel.isNotEmpty) qualityLabel,
+        if (hostName.isNotEmpty) hostName,
+      ].join(' • ');
       downloads.add(DownloadOption(
-        label: label,
-        quality: VideoQuality.fromLabel(resLabel) ?? VideoQuality.fromLabel(label),
+        label: label.isEmpty ? (host == 'other' ? 'Download' : host) : label,
+        quality: VideoQuality.fromLabel(qualityLabel) ??
+            VideoQuality.fromLabel(label),
         url: url,
-        host: detectServer(url),
+        host: host != 'other' ? host : (hostName.isNotEmpty ? hostName.toLowerCase() : null),
       ));
     }
 
-    // Tabel download: kolom pertama = resolusi, kolom lain = link per host.
-    for (final table in doc.querySelectorAll('table.download-table, .dl-table, table')) {
-      for (final row in table.querySelectorAll('tr')) {
-        final cells = row.querySelectorAll('td, th');
-        if (cells.length < 2) continue;
-        final resLabel = cleanText(cells.first.text);
-        for (var i = 1; i < cells.length; i++) {
-          for (final a in cells[i].querySelectorAll('a[href]')) {
-            addDownload(a.attributes['href'], resLabel, cleanText(a.text));
-          }
-        }
+    // Blok resolusi: <div class="soraurlx"><strong>720p | 155mb</strong> <a>Acefile</a>...
+    for (final box in doc.querySelectorAll('.soraurlx')) {
+      final rawLabel = cleanText(box.querySelector('strong, b, h4, h3')?.text);
+      final quality = rawLabel.split('|').first.trim();
+      for (final a in box.querySelectorAll('a[href]')) {
+        add(a.attributes['href'], quality, cleanText(a.text));
       }
     }
 
-    // Parser generik (container .download, li/strong, dst.) sebagai pelengkap.
+    // Tabel/daftar download generik sebagai pelengkap.
     for (final d in parseDownloadLinks(doc, baseUrl)) {
-      if (seenDl.add(d.url)) downloads.add(d);
+      if (seen.add(d.url)) downloads.add(d);
     }
 
-    // Streaming: iframe default + link stream.
-    final defaultEmbed = firstIframeSrc(doc, baseUrl);
-    if (defaultEmbed != null) {
-      mirrors.add(StreamMirror(
-        id: '${episode.id}::${defaultEmbed.hashCode}',
-        label: 'Default',
-        server: detectServer(defaultEmbed),
-        embedUrl: defaultEmbed,
-        downloads: downloads,
-      ));
-    }
-    for (final a in doc.querySelectorAll('.responsive-stream a, .stream-link, .mblink, .watch-online a')) {
-      final href = a.attributes['href'];
-      if (href == null || href.isEmpty || href == '#') continue;
-      final embed = absoluteUrl(baseUrl, href);
-      mirrors.add(StreamMirror(
-        id: '${episode.id}::${embed.hashCode}',
-        label: cleanText(a.text).isEmpty ? 'Mirror ${mirrors.length + 1}' : cleanText(a.text),
-        server: detectServer(embed),
-        embedUrl: embed,
-        downloads: downloads,
-      ));
-    }
-
-    // Tidak ada mirror khusus stream -> pakai link download sebagai mirror
-    // (player akan resolve / fallback ke WebView).
-    if (mirrors.isEmpty) {
-      for (final dl in downloads) {
-        mirrors.add(StreamMirror(
-          id: '${episode.id}::${dl.url.hashCode}',
-          label: dl.label,
-          server: dl.host ?? 'other',
-          embedUrl: dl.url,
-          downloads: downloads,
-        ));
+    const qualityOrder = {
+      '1080p hevc': 5,
+      '1080p': 4,
+      '720p': 3,
+      '480p': 2,
+      '360p': 1,
+    };
+    int rank(DownloadOption d) {
+      final q = (d.quality?.label ?? d.label).toLowerCase();
+      for (final e in qualityOrder.entries) {
+        if (q.contains(e.key)) return e.value;
       }
+      return 0;
     }
 
-    return episode.copyWith(mirrors: mirrors, downloads: downloads);
+    downloads.sort((a, b) => rank(b).compareTo(rank(a)));
+
+    return episode.copyWith(
+      downloads: downloads,
+      // Lendrive tidak menyediakan player streaming — hanya download.
+      mirrors: const [],
+    );
   }
 
   @override
@@ -194,88 +263,146 @@ class LendriveScraper implements BaseScraper {
 
   @override
   Future<List<Anime>> search(String query) async {
-    final url = '$baseUrl/?s=${Uri.encodeQueryComponent(query)}';
-    return _parseHomeGrid(url);
+    return _parseCards('$baseUrl/?s=${Uri.encodeQueryComponent(query)}');
   }
 
   @override
   Future<List<Genre>> getGenres() async {
-    final html = await _http.getHtml('$baseUrl/genres');
-    final doc = parseHtml(html);
+    final doc = parseHtml(await _http.getHtml('$baseUrl/genres/'));
     final genres = <Genre>[];
-    doc.querySelectorAll('.genre-list a, .genres a, ul a[href*="/genre"]').forEach((a) {
-      final name = cleanText(a.text);
-      final href = a.attributes['href'];
-      if (name.isNotEmpty && href != null) {
-        genres.add(Genre(name: name, url: href));
-      }
-    });
+    const skip = {'genres', 'genre', 'home', 'anime', 'ongoing', 'completed'};
+    for (final a in doc.querySelectorAll('.taxindex a, a[href*="/genres/"]')) {
+      final href = a.attributes['href'] ?? '';
+      if (href.contains('/feed') || href.contains('/page/')) continue;
+      // Nama ada di <span class="name">, jumlah judul di <span class="count">.
+      final name = cleanText(
+        (a.querySelector('.name')?.text ?? a.text)
+            .replaceAll(RegExp(r'\s+\d+$'), ''),
+      );
+      final slug = Uri.tryParse(href)?.pathSegments.where((s) => s.isNotEmpty).last;
+      if (name.isEmpty || slug == null || skip.contains(slug.toLowerCase())) continue;
+      if (genres.any((g) => g.name == name)) continue;
+      genres.add(Genre(name: name, slug: slug, url: href));
+    }
     return genres;
   }
 
   @override
   Future<List<Anime>> getByGenre(Genre genre, {int page = 1}) async {
-    if (genre.url == null) return [];
-    return _parseHomeGrid(genre.url!);
+    final url = genre.url;
+    if (url == null || url.isEmpty) return [];
+    final pageUrl = page <= 1 ? url : '${url.replaceAll(RegExp(r'/+$'), '')}page/$page/';
+    return _parseCards(pageUrl);
   }
 
   @override
   Future<List<DaySchedule>> getSchedule() async {
-    final html = await _http.getHtml(baseUrl);
-    final doc = parseHtml(html);
-    final days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
-    final result = <DaySchedule>[];
-    for (final day in days) {
-      final entries = <ScheduleEntry>[];
-      // Lendrive punya section schedule per hari
-      final daySection = doc.querySelector('#$day, .day-$day, [data-day="$day"]');
-      if (daySection == null) continue;
-      daySection.querySelectorAll('a').forEach((a) {
-        final href = a.attributes['href'];
-        final title = cleanText(a.text);
-        if (title.isNotEmpty) {
-          entries.add(ScheduleEntry(
-            source: source,
-            day: day,
-            animeTitle: title,
-            animeUrl: href,
-          ));
-        }
-      });
-      result.add(DaySchedule(day: day, entries: entries));
-    }
-    return result;
+    // Lendrive menaruh jadwal sebagai dropdown di beranda; tidak ada halaman
+    // jadwal terpisah yang stabil, jadi dikosongkan.
+    return const [];
   }
 
   @override
   Future<String?> resolveDirectUrl(String embedUrl) => resolveDirectFromEmbed(embedUrl);
 
-  Future<List<Anime>> _parseHomeGrid(String url) async {
-    final html = await _http.getHtml(url);
-    final doc = parseHtml(html);
-    final list = <Anime>[];
-    doc.querySelectorAll('.rel, .rel1, .col, .col-md-4, .card, article, .item').forEach((card) {
-      final a = card.querySelector('a[href*="anime"], a[href*="/anime"], h2 a, h3 a, .tt a');
-      if (a == null) return;
-      final href = a.attributes['href'];
-      if (href == null || !href.contains(baseUrl)) return;
-      final title = cleanText(card.querySelector('h2, h3, .title, .tt, .ttls')?.text ?? a.text);
-      final cover = card.querySelector('img')?.attributes['src'] ??
-          card.querySelector('img')?.attributes['data-src'];
-      final slug = href.split('/').where((s) => s.isNotEmpty).lastOrNull;
-      list.add(Anime(
-        id: Anime.makeId(source, slug ?? href),
-        source: source,
-        title: title,
-        slug: slug ?? '',
-        url: href,
-        cover: cover,
-      ));
-    });
-    return list;
+  Future<List<Anime>> _parseCards(String url) async {
+    final doc = parseHtml(await _http.getHtml(url));
+    final out = <Anime>[];
+    final seen = <String>{};
+    for (final card in _cards(doc)) {
+      final anime = _animeFromCard(card);
+      if (anime == null || !seen.add(anime.url)) continue;
+      out.add(anime);
+    }
+    return out;
   }
 
-  Future<List<Anime>> _parseAnimeList(String url) async {
-    return _parseHomeGrid(url);
+  Iterable<dom.Element> _cards(dom.Document doc) {
+    final articles = doc.querySelectorAll('article.bs');
+    if (articles.isNotEmpty) return articles;
+    return doc.querySelectorAll('.listupd .bs, .bsx');
+  }
+
+  Anime? _animeFromCard(dom.Element card) {
+    final anchor = card.querySelector('a[itemprop="url"]') ??
+        card.querySelector('a.tip') ??
+        card.querySelector('.tt a[href]') ??
+        card.querySelector('a[href]');
+    final href = anchor?.attributes['href'];
+    if (href == null || href.isEmpty || href == '#') return null;
+    final url = absoluteUrl(baseUrl, href);
+
+    final rawTitle = anchor?.attributes['title'] ??
+        card.querySelector('h2[itemprop="headline"]')?.text ??
+        card.querySelector('h2')?.text ??
+        card.querySelector('.tt')?.text ??
+        anchor?.text ??
+        '';
+    final title = _seriesTitle(cleanText(rawTitle));
+    if (title.isEmpty) return null;
+
+    final img = card.querySelector('img.ts-post-image') ??
+        card.querySelector('img[itemprop="image"]') ??
+        card.querySelector('img');
+    final cover = img?.attributes['src'] ?? img?.attributes['data-src'];
+
+    final type = cleanText(card.querySelector('.typez')?.text);
+    final badge = cleanText(card.querySelector('.bt .epx')?.text).toLowerCase();
+    String? status;
+    if (badge.contains('ongoing')) status = 'Ongoing';
+    if (badge.contains('completed')) status = 'Completed';
+
+    final slug = Uri.tryParse(url)?.pathSegments.where((s) => s.isNotEmpty).lastOrNull ?? url;
+
+    return Anime(
+      id: Anime.makeId(source, slug),
+      source: source,
+      title: title,
+      slug: slug,
+      url: url,
+      cover: cover,
+      type: type.isEmpty ? null : type,
+      status: status,
+    );
+  }
+
+  /// Buang embel-embel judul post episode ("– Ep 07 (Dual subs) x265/HEVC ...").
+  String _seriesTitle(String input) {
+    var t = input;
+    t = t.replaceAll(
+      RegExp(r'\s*[–\-—]\s*Ep(?:isode)?\s*\d+.*$', caseSensitive: false),
+      '',
+    );
+    t = t.replaceAll(
+      RegExp(r'\s*[–\-—]\s*\(?Batch\b.*$', caseSensitive: false),
+      '',
+    );
+    t = t.replaceAll(
+      RegExp(r'\s+\(?(Dual\s*subs?|x265\s*/\s*HEVC|Subtitle\s+Indonesia)\b.*$',
+          caseSensitive: false),
+      '',
+    );
+    return t.trim();
+  }
+
+  /// Rapikan judul episode: buang ekor "x265/HEVC Subtitle Indonesia & English".
+  String _episodeTitle(String input) {
+    var t = input;
+    t = t.replaceAll(
+      RegExp(r'\s*[–\-—]?\s*x265\s*/\s*HEVC.*$', caseSensitive: false),
+      '',
+    );
+    t = t.replaceAll(
+      RegExp(r'\s*[–\-—]?\s*Subtitle\s+(?:Indonesia|English).*$', caseSensitive: false),
+      '',
+    );
+    t = t.replaceAll(RegExp(r'[\s–\-—]+$'), '');
+    return t.trim();
+  }
+
+  String? _numberFromTitle(String title) {
+    final m = RegExp(r'Ep(?:isode)?\s*(\d+(?:\.\d+)?)', caseSensitive: false)
+        .firstMatch(title);
+    return m?.group(1);
   }
 }

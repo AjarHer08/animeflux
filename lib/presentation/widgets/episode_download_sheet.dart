@@ -9,7 +9,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/anime.dart';
 import '../../data/models/episode.dart';
 import '../../data/repositories/anime_repository.dart';
+import '../../data/repositories/download_resolver.dart';
 import '../../data/scrapers/scraper_utils.dart';
+import '../providers/download_providers.dart';
 import '../screens/browser_screen.dart';
 
 Future<void> showEpisodeDownloadSheet(
@@ -44,6 +46,9 @@ class _DownloadSheet extends ConsumerStatefulWidget {
 class _DownloadSheetState extends ConsumerState<_DownloadSheet> {
   late Future<List<DownloadOption>> _future;
 
+  /// Link yang sedang dicoba diunduh langsung di dalam aplikasi.
+  String? _resolvingUrl;
+
   @override
   void initState() {
     super.initState();
@@ -63,39 +68,68 @@ class _DownloadSheetState extends ConsumerState<_DownloadSheet> {
   }
 
   Future<void> _download(DownloadOption d) async {
-    final nav = Navigator.of(context);
-    if (isDirectMediaUrl(d.url)) {
-      // Unduh langsung (HttpURLConnection) sering ditolak server file (butuh
-      // cookie/UA browser). Jadi disiapkan lewat WebView dulu, lalu diunduh
-      // dengan cookie + User-Agent yang sama.
-      nav.pop();
-      nav.push(MaterialPageRoute(
-        builder: (_) => BrowserScreen(
-          url: d.url,
-          title: d.host ?? 'Download',
-          autoDownloadUrl: d.url,
-          referer: widget.episode.url,
-          animeId: widget.anime.id,
-          animeTitle: widget.anime.title,
-          episodeTitle: widget.episode.title,
-          cover: widget.anime.cover,
-        ),
-      ));
-    } else {
-      // Halaman file-host (acefile, pixeldrain, ...) — buka di browser
-      // ber-adblock; download otomatis ditangkap begitu file dipilih.
-      nav.pop();
-      nav.push(MaterialPageRoute(
-        builder: (_) => BrowserScreen(
-          url: d.url,
-          title: d.host ?? 'Download',
-          animeId: widget.anime.id,
-          animeTitle: widget.anime.title,
-          episodeTitle: widget.episode.title,
-          cover: widget.anime.cover,
-        ),
-      ));
+    if (_resolvingUrl != null) return;
+    setState(() => _resolvingUrl = d.url);
+
+    ResolvedDownload? resolved;
+    try {
+      resolved = await resolveInAppDownload(d.url, referer: widget.episode.url);
+    } catch (_) {
+      resolved = null;
     }
+    if (!mounted) return;
+    setState(() => _resolvingUrl = null);
+
+    if (resolved != null) {
+      // Link file berhasil diurai: unduh di dalam aplikasi lewat download
+      // manager (muncul di notifikasi + Pengaturan > Download Manager).
+      try {
+        await ref.read(downloadTasksProvider.notifier).enqueueUrl(
+              animeId: widget.anime.id,
+              animeTitle: widget.anime.title,
+              episodeTitle: widget.episode.title,
+              url: resolved.url,
+              quality: d.quality?.label ?? d.label.split(' • ').first,
+              cover: widget.anime.cover,
+              fileName: resolved.fileName,
+              headers: {'Referer': widget.episode.url},
+            );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Download dimulai di aplikasi — cek notifikasi atau Pengaturan > Download Manager',
+              ),
+            ),
+          );
+        }
+        return;
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Gagal memulai download: $e')),
+          );
+        }
+        return;
+      }
+    }
+
+    // Halaman file-host / perantara iklan: buka di WebView dalam aplikasi
+    // (bukan browser eksternal), download otomatis ditangkap begitu muncul.
+    final nav = Navigator.of(context);
+    nav.pop();
+    nav.push(MaterialPageRoute(
+      builder: (_) => BrowserScreen(
+        url: d.url,
+        title: d.host ?? 'Download',
+        autoDownloadUrl: isDirectMediaUrl(d.url) ? d.url : null,
+        referer: widget.episode.url,
+        animeId: widget.anime.id,
+        animeTitle: widget.anime.title,
+        episodeTitle: widget.episode.title,
+        cover: widget.anime.cover,
+      ),
+    ));
   }
 
   @override
@@ -142,10 +176,20 @@ class _DownloadSheetState extends ConsumerState<_DownloadSheet> {
             ));
           }
           for (final d in list) {
+            final busy = _resolvingUrl == d.url;
             children.add(ListTile(
-              leading: Icon(isDirectMediaUrl(d.url) ? Icons.download : Icons.open_in_new),
+              leading: busy
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2.5),
+                    )
+                  : const Icon(Icons.download_rounded),
               title: Text(d.label, maxLines: 2, overflow: TextOverflow.ellipsis),
-              subtitle: Text(d.host ?? Uri.tryParse(d.url)?.host ?? ''),
+              subtitle: Text(
+                busy ? 'Menyiapkan download di aplikasi…' : 'Download di aplikasi',
+              ),
+              enabled: !busy,
               onTap: () => _download(d),
               trailing: PopupMenuButton<String>(
                 onSelected: (v) async {
