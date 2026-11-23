@@ -5,6 +5,10 @@ library;
 const String kAppVersion = '1.1.7';
 const String kAppName = 'AnimeFlux';
 
+/// Dukungan pengguna / donasi (Saweria).
+const String kSaweriaUrl = 'https://saweria.co/Rezium';
+const String kSaweriaHandle = 'Saweria.co/Rezium';
+
 /// Daftar sumber anime yang didukung.
 /// User bisa memilih sumber per anime di detail page (parallel mode).
 enum SourceId { otakudesu, hidoristream, lendrive }
