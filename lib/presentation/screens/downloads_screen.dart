@@ -8,18 +8,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/download_providers.dart';
 import 'browser_screen.dart';
+import 'comic_downloads_tab.dart';
 
 class DownloadsScreen extends ConsumerWidget {
-  const DownloadsScreen({super.key});
+  /// 0 = Anime, 1 = Komik.
+  final int initialTab;
+  const DownloadsScreen({super.key, this.initialTab = 0});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final items = ref.watch(downloadTasksProvider);
-    return Scaffold(
-      appBar: GlassAppBar(title: const Text('Download Manager')),
+    return DefaultTabController(
+      length: 2,
+      initialIndex: initialTab,
+      child: Scaffold(
+      appBar: GlassAppBar(
+        title: const Text('Download Manager'),
+        bottom: const TabBar(tabs: [Tab(text: 'Anime'), Tab(text: 'Komik')]),
+      ),
       body: SafeArea(
-      child: Column(
+      child: TabBarView(children: [
+      Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
@@ -100,6 +110,9 @@ class DownloadsScreen extends ConsumerWidget {
                   ),
           ),
         ],
+      ),
+      const ComicDownloadsTab(),
+      ]),
       ),
       ),
     );

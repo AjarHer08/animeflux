@@ -33,9 +33,14 @@ class ComicLibrary extends ChangeNotifier {
 
   static const _bmKey = 'comic_bookmarks_v1';
   static const _progKey = 'comic_progress_v1';
+  static const _ratioKey = 'comic_ratios_v1';
 
   final List<Comic> _bookmarks = [];
   final Map<String, Map<String, dynamic>> _progress = {};
+
+  /// Rasio tinggi/lebar tiap halaman per chapter (kunci = URL chapter).
+  /// Dipakai agar posisi scroll bisa dipulihkan persis walau gambar belum dimuat.
+  final Map<String, List<double>> _ratios = {};
 
   List<Comic> get bookmarks => List.unmodifiable(_bookmarks);
   bool isBookmarked(String id) => _bookmarks.any((c) => c.id == id);
@@ -52,6 +57,14 @@ class ComicLibrary extends ChangeNotifier {
       if (raw != null) {
         (jsonDecode(raw) as Map<String, dynamic>).forEach((k, v) {
           _progress[k] = Map<String, dynamic>.from(v as Map);
+        });
+      }
+    } catch (_) {}
+    try {
+      final raw = prefs.getString(_ratioKey);
+      if (raw != null) {
+        (jsonDecode(raw) as Map<String, dynamic>).forEach((k, v) {
+          _ratios[k] = [for (final e in (v as List)) (e as num).toDouble()];
         });
       }
     } catch (_) {}
@@ -90,5 +103,38 @@ class ComicLibrary extends ChangeNotifier {
     p['title'] = ch.title;
     await sharedPreferencesInstance.setString(_progKey, jsonEncode(_progress));
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------- posisi baca
+
+  /// Posisi terakhir di [chapterUrl]: nomor halaman (0-based) + fraksi 0..1 di halaman itu.
+  ({int page, double frac})? scrollPos(String comicId, String chapterUrl) {
+    final pos = _progress[comicId]?['pos'];
+    if (pos is! Map || pos['url'] != chapterUrl) return null;
+    final page = (pos['page'] as num?)?.toInt() ?? 0;
+    final frac = (pos['frac'] as num?)?.toDouble() ?? 0.0;
+    return (page: page, frac: frac.clamp(0.0, 1.0).toDouble());
+  }
+
+  /// Simpan posisi baca (tanpa notifyListeners supaya tidak membangun ulang UI saat scroll).
+  Future<void> saveScroll(String comicId, ComicChapter ch, int page, double frac) async {
+    final p = _progress.putIfAbsent(comicId, () => <String, dynamic>{});
+    p['pos'] = {'url': ch.url, 'page': page, 'frac': double.parse(frac.toStringAsFixed(3))};
+    p['last'] = ch.url;
+    p['title'] = ch.title;
+    await sharedPreferencesInstance.setString(_progKey, jsonEncode(_progress));
+    notifyListeners();
+  }
+
+  List<double>? ratios(String chapterUrl) => _ratios[chapterUrl];
+
+  Future<void> saveRatios(String chapterUrl, List<double?> ratios) async {
+    if (ratios.every((r) => r == null)) return;
+    _ratios.remove(chapterUrl); // pindah ke akhir (terbaru)
+    _ratios[chapterUrl] = [for (final r in ratios) double.parse((r ?? 0).toStringAsFixed(3))];
+    while (_ratios.length > 40) {
+      _ratios.remove(_ratios.keys.first);
+    }
+    await sharedPreferencesInstance.setString(_ratioKey, jsonEncode(_ratios));
   }
 }

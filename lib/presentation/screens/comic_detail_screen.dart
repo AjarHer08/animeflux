@@ -6,9 +6,11 @@ import '../widgets/comic_cover.dart';
 import '../widgets/glass.dart';
 
 import '../../data/models/comic.dart';
+import '../../data/repositories/comic_download_repository.dart';
 import '../../data/repositories/comic_repository.dart';
 import 'browser_screen.dart';
 import 'comic_reader_screen.dart';
+import 'downloads_screen.dart';
 
 class ComicDetailScreen extends StatefulWidget {
   final Comic comic;
@@ -37,6 +39,183 @@ class _ComicDetailScreenState extends State<ComicDetailScreen> {
     );
   }
 
+  void _snack(String msg, {SnackBarAction? action}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg), action: action));
+  }
+
+  Future<void> _enqueue(Comic comic, List<ComicChapter> chapters) async {
+    if (chapters.isEmpty) {
+      _snack('Tidak ada chapter untuk diunduh');
+      return;
+    }
+    // Chapter paling awal diunduh lebih dulu supaya bisa dibaca berurutan.
+    final ordered = List<ComicChapter>.of(chapters)
+      ..sort((a, b) => comic.chapters.indexOf(b).compareTo(comic.chapters.indexOf(a)));
+    final n = await ComicDownloads.instance.enqueue(comic, ordered);
+    _snack(
+      n == 0 ? 'Chapter sudah ada di unduhan' : '$n chapter masuk antrian unduhan',
+      action: SnackBarAction(
+        label: 'Lihat',
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const DownloadsScreen(initialTab: 1)),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadMenu(Comic comic) async {
+    if (comic.chapters.isEmpty) {
+      _snack('Daftar chapter belum termuat');
+      return;
+    }
+    final lib = ComicLibrary.instance;
+    final unread = [for (final c in comic.chapters) if (!lib.isRead(comic.id, c.url)) c];
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.download),
+              title: Text('Semua chapter (${comic.chapters.length})'),
+              onTap: () => Navigator.pop(ctx, 'all'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.mark_chat_unread_outlined),
+              title: Text('Yang belum dibaca (${unread.length})'),
+              onTap: () => Navigator.pop(ctx, 'unread'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.checklist),
+              title: const Text('Pilih chapter…'),
+              onTap: () => Navigator.pop(ctx, 'pick'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'all') {
+      await _enqueue(comic, comic.chapters);
+    } else if (choice == 'unread') {
+      await _enqueue(comic, unread);
+    } else {
+      final picked = await _pickChapters(comic);
+      if (picked != null) await _enqueue(comic, picked);
+    }
+  }
+
+  Future<List<ComicChapter>?> _pickChapters(Comic comic) {
+    final selected = <ComicChapter>{};
+    return showDialog<List<ComicChapter>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Pilih chapter'),
+          contentPadding: const EdgeInsets.only(top: 12),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: MediaQuery.sizeOf(ctx).height * 0.55,
+            child: ListView.builder(
+              itemCount: comic.chapters.length,
+              itemBuilder: (_, i) {
+                final c = comic.chapters[i];
+                return CheckboxListTile(
+                  dense: true,
+                  value: selected.contains(c),
+                  title: Text(c.title),
+                  onChanged: (v) => setLocal(() {
+                    if (v == true) {
+                      selected.add(c);
+                    } else {
+                      selected.remove(c);
+                    }
+                  }),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => setLocal(() {
+                if (selected.length == comic.chapters.length) {
+                  selected.clear();
+                } else {
+                  selected.addAll(comic.chapters);
+                }
+              }),
+              child: Text(selected.length == comic.chapters.length ? 'Kosongkan' : 'Pilih semua'),
+            ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Batal')),
+            FilledButton(
+              onPressed: selected.isEmpty ? null : () => Navigator.pop(ctx, selected.toList()),
+              child: Text('Unduh (${selected.length})'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmRemove(ComicDlChapter it) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hapus unduhan?'),
+        content: Text('${it.chapterTitle} akan dihapus dari penyimpanan.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Hapus')),
+        ],
+      ),
+    );
+    if (ok == true) await ComicDownloads.instance.remove(it);
+  }
+
+  Widget _downloadButton(Comic comic, ComicChapter ch, ColorScheme scheme) {
+    final dl = ComicDownloads.instance;
+    final it = dl.find(comic.id, ch.url);
+    Widget btn(Widget icon, VoidCallback onTap, String tip) => IconButton(
+          icon: icon,
+          tooltip: tip,
+          visualDensity: VisualDensity.compact,
+          onPressed: onTap,
+        );
+    if (it == null) {
+      return btn(const Icon(Icons.download_outlined, size: 20), () => _enqueue(comic, [ch]), 'Unduh');
+    }
+    switch (it.status) {
+      case ComicDlStatus.done:
+        return btn(Icon(Icons.download_done, size: 20, color: scheme.primary),
+            () => _confirmRemove(it), 'Sudah diunduh (ketuk untuk hapus)');
+      case ComicDlStatus.running:
+      case ComicDlStatus.queued:
+        return btn(
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.5,
+              value: it.status == ComicDlStatus.running ? it.progress : null,
+            ),
+          ),
+          () => dl.pause(it),
+          'Mengunduh (ketuk untuk jeda)',
+        );
+      case ComicDlStatus.paused:
+        return btn(const Icon(Icons.play_circle_outline, size: 20), () => dl.resume(it), 'Lanjutkan unduhan');
+      case ComicDlStatus.failed:
+        return btn(Icon(Icons.refresh, size: 20, color: scheme.error), () => dl.resume(it),
+            it.error ?? 'Gagal — ketuk untuk coba lagi');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -44,6 +223,14 @@ class _ComicDetailScreenState extends State<ComicDetailScreen> {
       appBar: GlassAppBar(
         title: Text(widget.comic.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          FutureBuilder<Comic>(
+            future: _future,
+            builder: (context, snap) => IconButton(
+              icon: const Icon(Icons.download),
+              tooltip: 'Download chapter',
+              onPressed: snap.hasData ? () => _downloadMenu(snap.data!) : null,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.public),
             tooltip: 'Buka di browser ber-adblock',
@@ -141,7 +328,10 @@ class _ComicDetailScreenState extends State<ComicDetailScreen> {
                       final i = comic.chapters.indexWhere((c) => c.url == last.url);
                       if (i >= 0) {
                         idx = i;
-                        label = 'Lanjut: ${last.title}';
+                        final pos = lib.scrollPos(comic.id, last.url);
+                        label = pos == null
+                            ? 'Lanjut: ${last.title}'
+                            : 'Lanjut: ${last.title} (hal. ${pos.page + 1})';
                       }
                     }
                     return FilledButton.icon(
@@ -164,7 +354,7 @@ class _ComicDetailScreenState extends State<ComicDetailScreen> {
                     ),
                   ),
                 ListenableBuilder(
-                  listenable: lib,
+                  listenable: Listenable.merge([lib, ComicDownloads.instance]),
                   builder: (context, _) => Column(
                     children: [
                       for (var i = 0; i < comic.chapters.length; i++)
@@ -177,9 +367,14 @@ class _ComicDetailScreenState extends State<ComicDetailScreen> {
                             ),
                           ),
                           subtitle: (comic.chapters[i].date ?? '').isEmpty ? null : Text(comic.chapters[i].date!),
-                          trailing: lib.isRead(comic.id, comic.chapters[i].url)
-                              ? const Icon(Icons.check, size: 18)
-                              : null,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (lib.isRead(comic.id, comic.chapters[i].url))
+                                const Icon(Icons.check, size: 18),
+                              _downloadButton(comic, comic.chapters[i], scheme),
+                            ],
+                          ),
                           onTap: () => _open(comic, i),
                         ),
                     ],
