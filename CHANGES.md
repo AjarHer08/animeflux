@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.6
+## 1.1.7
 - Komik: thumbnail & halaman chapter kini dimuat dengan fallback berlapis (Referer + cookie/User-Agent WebView -> User-Agent saja -> proxy gambar wsrv.nl). Ikon gambar rusak bisa diketuk untuk coba lagi.
 - Komik: posisi baca diingat (halaman + posisi di halaman). "Lanjut: Chapter N (hal. X)" membuka chapter tepat di posisi terakhir; posisi tetap akurat karena rasio tinggi halaman disimpan.
 - Komik: fitur download untuk semua sumber (Komikstation, Kiryuu, Komiku). Ikon download di detail komik (semua / belum dibaca / pilih chapter) dan di tiap chapter. Chapter terunduh dibaca offline; kelola di Download Manager > tab Komik.
