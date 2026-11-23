@@ -38,39 +38,63 @@ class KiryuuScraper extends ComicScraper {
     return const [];
   }
 
-  /// Parameter filter tipe untuk /advanced-search/ (beberapa bentuk dicoba berurutan).
-  List<String> _typeQueries(ComicCategory c) {
-    if (c == ComicCategory.all) return const [''];
-    return ['types%5B%5D=${c.slug}&', 'type=${c.slug}&', 'types=${c.slug}&'];
+  /// Kiryuu versi sekarang menjalankan filter `/advanced-search/` lewat
+  /// JavaScript (HTMX + admin-ajax), jadi parameter `type=` di URL diabaikan
+  /// dan halaman selalu kosong. Karena itu daftar diambil tanpa filter lalu
+  /// disaring di sisi aplikasi memakai badge tipe pada tiap kartu.
+  Future<List<Comic>> _listByCategory(
+    ComicCategory category, {
+    required bool popular,
+    required int page,
+  }) async {
+    final urls = popular && category == ComicCategory.all
+        ? [
+            '$baseUrl/advanced-search/?order=popular&page=$page',
+            '$baseUrl/manga/?page=$page',
+            '$baseUrl/latest/?page=$page',
+          ]
+        : [
+            '$baseUrl/latest/?page=$page',
+            '$baseUrl/manga/?page=$page',
+          ];
+
+    final pool = <Comic>[];
+    final seen = <String>{};
+    Object? lastError;
+    for (final u in urls) {
+      try {
+        final doc = parseHtml(await _http.getHtml(u));
+        final list = parseComicLinks(doc, baseUrl, source);
+        for (final c in list) {
+          if (seen.add(c.id)) pool.add(c);
+        }
+        if (pool.isNotEmpty) break;
+      } catch (e) {
+        lastError = e;
+        logger.w('Kiryuu $u gagal: $e');
+      }
+    }
+    if (pool.isEmpty && lastError != null) throw lastError;
+    if (category == ComicCategory.all) return pool;
+
+    final wanted = category.slug.toLowerCase();
+    final filtered = pool
+        .where((c) => (c.type ?? '').toLowerCase() == wanted)
+        .toList();
+    if (filtered.isNotEmpty) return filtered;
+
+    // Badge tipe tidak terbaca sama sekali -> jangan tampilkan "kosong" palsu.
+    final anyTyped = pool.any((c) => (c.type ?? '').isNotEmpty);
+    return anyTyped ? const [] : pool;
   }
 
   @override
-  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all}) {
-    if (category == ComicCategory.all) {
-      return _firstNonEmpty([
-        '$baseUrl/latest/?page=$page',
-        '$baseUrl/?page=$page&pagedfor=latest',
-      ]);
-    }
-    return _firstNonEmpty([
-      for (final q in _typeQueries(category))
-        '$baseUrl/advanced-search/?${q}order=latest&page=$page',
-    ]);
-  }
+  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all}) =>
+      _listByCategory(category, popular: false, page: page);
 
   @override
-  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all}) {
-    if (category == ComicCategory.all) {
-      return _firstNonEmpty([
-        '$baseUrl/advanced-search/?order=popular&page=$page',
-        '$baseUrl/?page=$page&pagedfor=project',
-      ]);
-    }
-    return _firstNonEmpty([
-      for (final q in _typeQueries(category))
-        '$baseUrl/advanced-search/?${q}order=popular&page=$page',
-    ]);
-  }
+  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all}) =>
+      _listByCategory(category, popular: true, page: page);
 
   @override
   Future<List<Comic>> search(String query, {int page = 1}) {
@@ -101,7 +125,7 @@ class KiryuuScraper extends ComicScraper {
     final html = await _http.getHtml(comic.url);
     final doc = parseHtml(html);
 
-    final title = cleanText(doc.querySelector('h1')?.text);
+    final title = cleanTitle(doc.querySelector('h1')?.text);
     final cover = metaContent(doc, 'og:image');
     final desc = metaContent(doc, 'og:description') ??
         cleanText(doc.querySelector('[itemprop="description"]')?.text);
