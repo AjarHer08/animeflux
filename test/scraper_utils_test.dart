@@ -82,4 +82,16 @@ void main() {
     final g = parseGenreOptions(doc);
     expect(g.map((e) => e.slug), ['action', 'school-life']);
   });
+
+  test('extractPageImages: sampul di sidebar tidak dianggap halaman chapter', () {
+    const html = '''<main><div id="readerarea"></div>
+<div class="widget"><img src="https://k.org/up/2024/01/judul-lain-cover.jpg"></div></main>''';
+    expect(extractPageImages(parseHtml(html), html, 'https://k.org'), isEmpty);
+  });
+
+  test('extractPageImages: JSON "images" di script', () {
+    const html = '''<script>var d={"images":["https:\\/\\/c.x\\/1.jpg","https:\\/\\/c.x\\/2.jpg"]};</script>''';
+    expect(extractPageImages(parseHtml(html), html, 'https://k.org'),
+        ['https://c.x/1.jpg', 'https://c.x/2.jpg']);
+  });
 }

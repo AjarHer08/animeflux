@@ -188,8 +188,10 @@ class KomikuScraper extends ComicScraper {
   }
 
   @override
-  Future<List<String>> getChapterPages(ComicChapter chapter) async {
-    final html = await _http.getHtml(chapter.url);
-    return extractPageImages(parseHtml(html), html, baseUrl);
-  }
+  Future<List<String>> getChapterPages(ComicChapter chapter) => pagesWithRenderFallback(
+        url: chapter.url,
+        base: baseUrl,
+        plain: _http.getHtml,
+        rendered: _http.getHtmlRendered,
+      );
 }

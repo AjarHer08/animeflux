@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.10
+- Komik / pembaca: chapter yang hanya menampilkan gambar sampul (bukan halaman komik) diperbaiki. Penyebab: bila halaman chapter dimuat lewat JavaScript, parser jatuh ke "semua <img>" dan mengambil sampul seri lain di sidebar. Kini sidebar/rekomendasi/sampul/thumbnail dibuang, JSON `"images":[...]` di <script> dibaca, dan bila hasil < 3 gambar halaman diulang dari HTML hasil render WebView (tunggu 3 dtk).
+
 ## 1.1.9
 - Komik / Komikstation: judul yang hanya menampilkan sampul tanpa chapter diperbaiki. Pencarian chapter kini berlapis: kontainer daftar chapter (banyak varian tema) -> tautan chapter yang memuat slug -> kelompok tautan chapter terbesar (slug halaman seri boleh beda dengan slug URL chapter) -> halaman hasil render WebView -> POST `ajax/chapters/` -> tombol chapter pertama/terbaru. Sidebar/rekomendasi tidak lagi ikut terbaca sebagai chapter.
 - Komik: filter lengkap untuk Komikstation, Kiryuu, Komiku — Tipe, Status (berjalan/tamat), Genre (daftar dibaca dari situs, cadangan daftar umum) dan Urutan (terbaru/populer/A-Z/baru ditambahkan) lewat tombol Filter. Kiryuu memakai `admin-ajax advanced_search` (dengan nonce) lalu jatuh ke HTML + saring di aplikasi.

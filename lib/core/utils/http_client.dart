@@ -134,7 +134,8 @@ class HttpClient {
 
   /// Ambil HTML hasil render WebView (JS jalan) — untuk halaman yang daftarnya
   /// dimuat lewat JavaScript.
-  Future<String> getHtmlRendered(String url) => WebFetcher.fetch(url);
+  Future<String> getHtmlRendered(String url) =>
+      WebFetcher.fetch(url, settle: const Duration(seconds: 3));
 
   /// POST form (dipakai AJAX admin-ajax.php WordPress).
   Future<String> postForm(

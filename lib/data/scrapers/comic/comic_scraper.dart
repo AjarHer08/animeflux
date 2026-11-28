@@ -604,6 +604,23 @@ List<String> extractPageImages(dom.Document doc, String html, String base) {
   var r = clean(fromAttr);
   if (r.isNotEmpty) return r;
 
+  // 2b) JSON gambar di <script> mana pun: "images":["...","..."] (ambil yang terpanjang).
+  List<String> bestJson = const [];
+  for (final m in RegExp(r'"images"\s*:\s*(\[[^\]]*\])').allMatches(html)) {
+    try {
+      final j = jsonDecode(m.group(1)!);
+      if (j is! List) continue;
+      final urls = <String>[];
+      for (final e in j) {
+        if (e is String) urls.add(absoluteUrl(base, e.replaceAll(r'\/', '/')));
+        if (e is Map && e['url'] != null) urls.add(absoluteUrl(base, '${e['url']}'));
+      }
+      final c = clean(urls);
+      if (c.length > bestJson.length) bestJson = c;
+    } catch (_) {}
+  }
+  if (bestJson.length >= 2) return bestJson;
+
   // 3) Selector reader umum.
   const selectors = [
     '#readerarea img',
@@ -621,12 +638,53 @@ List<String> extractPageImages(dom.Document doc, String html, String base) {
     if (r.isNotEmpty) return r;
   }
 
-  // 4) Fallback: semua <img> berekstensi gambar di konten utama.
+  // 4) Fallback: <img> berekstensi gambar di konten utama, TANPA sidebar /
+  //    rekomendasi / sampul / thumbnail. (Dulu semua <img> ikut terambil, sehingga
+  //    saat halaman chapter dimuat lewat JS yang tampil hanya sampul seri lain.)
   final scope = doc.querySelector('main, article, #content, .content') ?? doc.body;
   final ext = RegExp(r'\.(jpe?g|png|webp|avif)(\?|$)', caseSensitive: false);
-  final urls = (scope?.querySelectorAll('img') ?? const <dom.Element>[])
-      .map((e) => imgUrl(e, base))
-      .whereType<String>()
-      .where((u) => ext.hasMatch(u));
+  final urls = <String>[];
+  for (final e in scope?.querySelectorAll('img') ?? const <dom.Element>[]) {
+    if (_inNoise(e)) continue;
+    final u = imgUrl(e, base);
+    if (u == null || !ext.hasMatch(u) || isCoverLike(u)) continue;
+    urls.add(u);
+  }
   return clean(urls);
+}
+
+/// URL yang tampak seperti sampul / thumbnail seri (bukan halaman chapter).
+bool isCoverLike(String url) => RegExp(
+      r'(cover|thumb|poster|banner|sampul|/covers?/|-\d{2,4}x\d{2,4}\.(jpe?g|png|webp)|[?&]w=\d{2,3}(&|$))',
+      caseSensitive: false,
+    ).hasMatch(url);
+
+/// Ambil gambar halaman chapter: HTML biasa dulu; kalau hasilnya kurang dari
+/// 3 gambar (halaman dimuat lewat JS) ulangi dengan HTML hasil render WebView.
+Future<List<String>> pagesWithRenderFallback({
+  required String url,
+  required String base,
+  required Future<String> Function(String url) plain,
+  required Future<String> Function(String url) rendered,
+  List<String> Function(String html)? extra,
+}) async {
+  List<String> run(String html) {
+    var r = extractPageImages(parseHtml(html), html, base);
+    if (r.length < 3 && extra != null) {
+      final more = extra(html);
+      if (more.length > r.length) r = more;
+    }
+    return r;
+  }
+
+  var pages = <String>[];
+  try {
+    pages = run(await plain(url));
+  } catch (_) {}
+  if (pages.length >= 3) return pages;
+  try {
+    final more = run(await rendered(url));
+    if (more.length > pages.length) pages = more;
+  } catch (_) {}
+  return pages;
 }

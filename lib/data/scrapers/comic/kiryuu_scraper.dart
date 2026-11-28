@@ -288,11 +288,20 @@ class KiryuuScraper extends ComicScraper {
     final html = await _http.getHtml(chapter.url);
     final doc = parseHtml(html);
     var pages = extractPageImages(doc, html, baseUrl);
-    if (pages.length <= 1) {
+    if (pages.length < 3) {
       for (final frag in await _htmxDocs(doc, 'image')) {
         final more = extractPageImages(frag, frag.outerHtml, baseUrl);
         if (more.length > pages.length) pages = more;
       }
+    }
+    if (pages.length >= 3) return pages;
+    // Masih kurang: render lewat WebView (halaman dimuat JS).
+    try {
+      final rendered = await _http.getHtmlRendered(chapter.url);
+      final more = extractPageImages(parseHtml(rendered), rendered, baseUrl);
+      if (more.length > pages.length) pages = more;
+    } catch (e) {
+      logger.w('Kiryuu halaman via WebView gagal: $e');
     }
     return pages;
   }

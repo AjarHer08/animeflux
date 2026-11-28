@@ -27,6 +27,7 @@ class WebFetcher {
   static Future<String> fetch(
     String url, {
     Duration timeout = const Duration(seconds: 40),
+    Duration settle = Duration.zero,
   }) async {
     final completer = Completer<String>();
     Future<void> finish(InAppWebViewController c) async {
@@ -37,6 +38,8 @@ class WebFetcher {
           if (!_isChallengeTitle(title)) break;
           await Future<void>.delayed(const Duration(seconds: 1));
         }
+        // Beri waktu skrip situs memasang gambar/daftar (halaman yang dimuat JS).
+        if (settle > Duration.zero) await Future<void>.delayed(settle);
         final html = await c.evaluateJavascript(
           source: 'document.documentElement.outerHTML',
         );
