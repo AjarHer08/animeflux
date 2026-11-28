@@ -303,6 +303,13 @@ class KiryuuScraper extends ComicScraper {
     } catch (e) {
       logger.w('Kiryuu halaman via WebView gagal: $e');
     }
+    if (pages.length >= 3) return pages;
+    try {
+      final live = await _http.getRenderedImages(chapter.url);
+      if (live.length > pages.length) pages = live;
+    } catch (e) {
+      logger.w('Kiryuu gambar via DOM hidup gagal: $e');
+    }
     return pages;
   }
 }

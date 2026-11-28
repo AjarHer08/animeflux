@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.11
+- Komik / pembaca: "Tidak ada gambar yang terbaca" diperbaiki dengan cadangan terakhir yang tidak bergantung pada struktur HTML: chapter dibuka di WebView tersembunyi, digulir sampai bawah (memicu lazy-load), lalu gambar besar dipilih dari kontainer pembaca (di luar sidebar/header/footer/rekomendasi).
+
 ## 1.1.10
 - Komik / pembaca: chapter yang hanya menampilkan gambar sampul (bukan halaman komik) diperbaiki. Penyebab: bila halaman chapter dimuat lewat JavaScript, parser jatuh ke "semua <img>" dan mengambil sampul seri lain di sidebar. Kini sidebar/rekomendasi/sampul/thumbnail dibuang, JSON `"images":[...]` di <script> dibaca, dan bila hasil < 3 gambar halaman diulang dari HTML hasil render WebView (tunggu 3 dtk).
 

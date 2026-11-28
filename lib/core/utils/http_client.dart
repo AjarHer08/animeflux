@@ -137,6 +137,9 @@ class HttpClient {
   Future<String> getHtmlRendered(String url) =>
       WebFetcher.fetch(url, settle: const Duration(seconds: 3));
 
+  /// URL gambar halaman chapter dari DOM hidup WebView (lihat [WebFetcher.fetchImages]).
+  Future<List<String>> getRenderedImages(String url) => WebFetcher.fetchImages(url);
+
   /// POST form (dipakai AJAX admin-ajax.php WordPress).
   Future<String> postForm(
     String url,

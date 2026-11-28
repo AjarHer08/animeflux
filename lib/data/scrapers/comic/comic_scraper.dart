@@ -666,6 +666,7 @@ Future<List<String>> pagesWithRenderFallback({
   required String base,
   required Future<String> Function(String url) plain,
   required Future<String> Function(String url) rendered,
+  Future<List<String>> Function(String url)? renderedImages,
   List<String> Function(String html)? extra,
 }) async {
   List<String> run(String html) {
@@ -685,6 +686,12 @@ Future<List<String>> pagesWithRenderFallback({
   try {
     final more = run(await rendered(url));
     if (more.length > pages.length) pages = more;
+  } catch (_) {}
+  if (pages.length >= 3 || renderedImages == null) return pages;
+  // Terakhir: baca gambar langsung dari DOM hidup (gulir + pilih kontainer pembaca).
+  try {
+    final live = await renderedImages(url);
+    if (live.length > pages.length) pages = live;
   } catch (_) {}
   return pages;
 }

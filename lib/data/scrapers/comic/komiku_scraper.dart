@@ -193,5 +193,6 @@ class KomikuScraper extends ComicScraper {
         base: baseUrl,
         plain: _http.getHtml,
         rendered: _http.getHtmlRendered,
+        renderedImages: _http.getRenderedImages,
       );
 }
