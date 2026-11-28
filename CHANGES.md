@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.9
+- Komik / Komikstation: judul yang hanya menampilkan sampul tanpa chapter diperbaiki. Pencarian chapter kini berlapis: kontainer daftar chapter (banyak varian tema) -> tautan chapter yang memuat slug -> kelompok tautan chapter terbesar (slug halaman seri boleh beda dengan slug URL chapter) -> halaman hasil render WebView -> POST `ajax/chapters/` -> tombol chapter pertama/terbaru. Sidebar/rekomendasi tidak lagi ikut terbaca sebagai chapter.
+- Komik: filter lengkap untuk Komikstation, Kiryuu, Komiku — Tipe, Status (berjalan/tamat), Genre (daftar dibaca dari situs, cadangan daftar umum) dan Urutan (terbaru/populer/A-Z/baru ditambahkan) lewat tombol Filter. Kiryuu memakai `admin-ajax advanced_search` (dengan nonce) lalu jatuh ke HTML + saring di aplikasi.
+- Komik / pencarian: tidak lagi "kadang ada kadang tidak" — User-Agent tidak lagi diacak tiap request, request dicoba ulang hingga 3x (jaringan/5xx/body kosong), ada beberapa URL cadangan per situs, hasil parser generik disaring relevansinya, halaman kosong sesaat tidak mengakhiri daftar, dan pencarian otomatis 0,6 dtk setelah berhenti mengetik.
+- Skrip `scripts/push-build.sh`: commit, push, jalankan GitHub Actions, tunggu, dan unduh APK dari terminal.
+
 ## 1.1.7
 - Komik: thumbnail & halaman chapter kini dimuat dengan fallback berlapis (Referer + cookie/User-Agent WebView -> User-Agent saja -> proxy gambar wsrv.nl). Ikon gambar rusak bisa diketuk untuk coba lagi.
 - Komik: posisi baca diingat (halaman + posisi di halaman). "Lanjut: Chapter N (hal. X)" membuka chapter tepat di posisi terakhir; posisi tetap akurat karena rasio tinggi halaman disimpan.

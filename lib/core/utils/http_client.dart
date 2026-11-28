@@ -31,8 +31,9 @@ class HttpClient {
 
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
-        options.headers['User-Agent'] =
-            kDesktopUserAgents[DateTime.now().microsecond % kDesktopUserAgents.length];
+        // UA TETAP: rotasi UA tiap request membuat Cloudflare/WAF kadang menolak
+        // (penyebab hasil pencarian "kadang ada kadang tidak").
+        options.headers['User-Agent'] = kDesktopUserAgents[0];
         // Jangan timpa header yang sudah diisi pemanggil (mis. Referer/Accept).
         kDefaultHeaders.forEach((k, v) => options.headers.putIfAbsent(k, () => v));
         if (options.headers['Referer'] == null) {
@@ -74,25 +75,43 @@ class HttpClient {
 
     Response<String>? res;
     Object? netError;
-    try {
-      res = await _dio.get<String>(
-        url,
-        options: Options(headers: extraHeaders, responseType: ResponseType.plain),
-      );
-    } catch (e) {
-      netError = e;
+    // Maks 3 percobaan untuk gangguan sesaat: error jaringan, 5xx/429, atau
+    // body kosong. Jeda singkat bertambah tiap percobaan.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      res = null;
+      netError = null;
+      try {
+        res = await _dio.get<String>(
+          url,
+          options: Options(headers: extraHeaders, responseType: ResponseType.plain),
+        );
+      } catch (e) {
+        netError = e;
+      }
+      final c = res?.statusCode ?? 0;
+      final b = res?.data ?? '';
+      final transient = netError != null ||
+          c == 429 ||
+          c >= 500 && c != 503 ||
+          ((c == 200 || c == 201) && b.trim().length < 200);
+      if (!transient) break;
+      await Future<void>.delayed(Duration(milliseconds: 600 * (attempt + 1)));
     }
 
     final code = res?.statusCode ?? 0;
     final body = res?.data ?? '';
 
-    if (res != null && (code == 200 || code == 201) && !_looksLikeChallenge(body)) {
+    if (res != null &&
+        (code == 200 || code == 201) &&
+        body.trim().length >= 200 &&
+        !_looksLikeChallenge(body)) {
       return body;
     }
 
     // Diblokir / challenge -> coba WebView headless.
     final blocked = code == 403 || code == 429 || code == 503 ||
-        (res != null && code == 200 && _looksLikeChallenge(body));
+        (res != null && code == 200 && _looksLikeChallenge(body)) ||
+        (res != null && code == 200 && body.trim().length < 200);
     if (blocked) {
       try {
         final html = await WebFetcher.fetch(url);
@@ -112,6 +131,10 @@ class HttpClient {
     }
     throw netError ?? Exception('Gagal memuat $url');
   }
+
+  /// Ambil HTML hasil render WebView (JS jalan) — untuk halaman yang daftarnya
+  /// dimuat lewat JavaScript.
+  Future<String> getHtmlRendered(String url) => WebFetcher.fetch(url);
 
   /// POST form (dipakai AJAX admin-ajax.php WordPress).
   Future<String> postForm(

@@ -24,7 +24,13 @@ class KomikuScraper extends ComicScraper {
     return 'https://api.$host';
   }
 
-  Future<List<Comic>> _list(List<String> urls) async {
+  Future<List<Comic>> _list(
+    List<String> urls, {
+    String? searchQuery,
+    ComicStatusFilter status = ComicStatusFilter.all,
+    ComicCategory category = ComicCategory.all,
+    bool quietEmpty = false,
+  }) async {
     Object? lastError;
     for (final u in urls) {
       try {
@@ -50,40 +56,89 @@ class KomikuScraper extends ComicScraper {
             latestChapter: cleanText(card.querySelector('.new1 a span:last-child, .new1')?.text),
           ));
         }
-        if (out.isNotEmpty) return out;
-        final generic = parseComicLinks(doc, baseUrl, source);
-        if (generic.isNotEmpty) return generic;
+        if (out.isNotEmpty) return _post(out, status, category);
+        var generic = parseComicLinks(doc, baseUrl, source);
+        if (searchQuery != null) generic = filterRelevant(generic, searchQuery);
+        if (generic.isNotEmpty) return _post(generic, status, category);
       } catch (e) {
         lastError = e;
         logger.w('Komiku $u gagal: $e');
       }
     }
-    if (lastError != null) throw lastError;
+    if (lastError != null && !quietEmpty) throw lastError;
     return const [];
   }
 
-  /// API Komiku: filter lewat `tipe=manga|manhwa|manhua`.
-  String _tipe(ComicCategory c) => c == ComicCategory.all ? '' : '&tipe=${c.slug}';
+  /// Jaga-jaga bila API mengabaikan parameter `tipe`: saring ulang di aplikasi
+  /// hanya jika badge tipe terbaca pada kartu.
+  List<Comic> _post(List<Comic> list, ComicStatusFilter status, ComicCategory category) {
+    if (category == ComicCategory.all) return list;
+    final typed = list.where((c) => (c.type ?? '').isNotEmpty).toList();
+    if (typed.isEmpty) return list;
+    final wanted = category.slug.toLowerCase();
+    final ok = [for (final c in list) if ((c.type ?? '').toLowerCase() == wanted) c];
+    return ok.isEmpty ? list : ok;
+  }
 
   @override
-  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all}) => _list([
-        '$_api/manga/page/$page/?orderby=modified${_tipe(category)}',
-        '$baseUrl/manga/page/$page/?orderby=modified${_tipe(category)}',
-      ]);
+  List<ComicOrder> get supportedOrders =>
+      const [ComicOrder.latest, ComicOrder.popular, ComicOrder.added];
+
+  String _orderBy(ComicOrder o) {
+    switch (o) {
+      case ComicOrder.popular:
+        return 'meta_value_num';
+      case ComicOrder.added:
+        return 'date';
+      case ComicOrder.latest:
+      case ComicOrder.az:
+        return 'modified';
+    }
+  }
+
+  /// API Komiku: `/manga/page/N/?orderby=..&tipe=..&genre=..&status=..`
+  /// (status: `ongoing` | `end`).
+  @override
+  Future<List<Comic>> browse({int page = 1, ComicFilter filter = const ComicFilter()}) {
+    final q = <String>['orderby=${_orderBy(filter.order)}'];
+    if (filter.category != ComicCategory.all) q.add('tipe=${filter.category.slug}');
+    if (filter.genre != null) q.add('genre=${Uri.encodeQueryComponent(filter.genre!.slug)}');
+    if (filter.status != ComicStatusFilter.all) {
+      q.add('status=${filter.status == ComicStatusFilter.ongoing ? 'ongoing' : 'end'}');
+    }
+    final qs = q.join('&');
+    return _list([
+      '$_api/manga/page/$page/?$qs',
+      '$baseUrl/manga/page/$page/?$qs',
+      '$baseUrl/pustaka/page/$page/?$qs',
+    ], status: filter.status, category: filter.category);
+  }
+
+  List<ComicGenre>? _genres;
 
   @override
-  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all}) => _list([
-        '$_api/manga/page/$page/?orderby=meta_value_num${_tipe(category)}',
-        '$baseUrl/manga/page/$page/?orderby=meta_value_num${_tipe(category)}',
-      ]);
+  Future<List<ComicGenre>> getGenres() async {
+    if (_genres != null) return _genres!;
+    for (final u in ['$baseUrl/pustaka/', '$baseUrl/manga/']) {
+      try {
+        final list = parseGenreOptions(parseHtml(await _http.getHtml(u)));
+        if (list.length >= 5) return _genres = list;
+      } catch (e) {
+        logger.w('Genre Komiku $u gagal: $e');
+      }
+    }
+    return kCommonGenres;
+  }
 
   @override
   Future<List<Comic>> search(String query, {int page = 1}) {
     final q = Uri.encodeQueryComponent(query);
+    final pg = page <= 1 ? '' : 'page/$page/';
     return _list([
-      '$_api/?post_type=manga&s=$q',
-      '$baseUrl/?post_type=manga&s=$q',
-    ]);
+      '$_api/$pg?post_type=manga&s=$q',
+      '$baseUrl/$pg?post_type=manga&s=$q',
+      '$baseUrl/$pg?s=$q',
+    ], searchQuery: query, quietEmpty: page > 1);
   }
 
   @override
@@ -117,9 +172,8 @@ class KomikuScraper extends ComicScraper {
         date: cleanText(row.querySelector('td.tanggalseries')?.text),
       ));
     }
-    if (chapters.isEmpty) {
-      chapters = parseChapterLinks(doc, baseUrl, onlyContaining: comic.slug.split('-').first);
-    }
+    if (chapters.isEmpty) chapters = layeredChapters(doc, baseUrl, comic.slug);
+    chapters = sortChapters(chapters);
 
     return comic.copyWith(
       title: title.isEmpty ? null : title,

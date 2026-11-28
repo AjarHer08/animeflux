@@ -25,11 +25,124 @@ abstract class ComicScraper {
         'User-Agent': kDesktopUserAgents[0],
       };
 
-  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all});
-  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all});
+  /// Daftar komik dengan filter lengkap (tipe, status, genre, urutan).
+  Future<List<Comic>> browse({int page = 1, ComicFilter filter = const ComicFilter()});
+
+  /// Urutan yang didukung sumber ini.
+  List<ComicOrder> get supportedOrders => ComicOrder.values;
+
+  /// Daftar genre sumber (diambil dari situs; jatuh ke daftar umum bila gagal).
+  Future<List<ComicGenre>> getGenres();
+
+  Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all}) =>
+      browse(page: page, filter: ComicFilter(category: category, order: ComicOrder.latest));
+
+  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all}) =>
+      browse(page: page, filter: ComicFilter(category: category, order: ComicOrder.popular));
+
   Future<List<Comic>> search(String query, {int page = 1});
   Future<Comic> getDetail(Comic comic);
   Future<List<String>> getChapterPages(ComicChapter chapter);
+}
+
+/// Genre umum — dipakai bila daftar genre situs gagal dibaca.
+const List<ComicGenre> kCommonGenres = [
+  ComicGenre('action', 'Action'),
+  ComicGenre('adventure', 'Adventure'),
+  ComicGenre('comedy', 'Comedy'),
+  ComicGenre('cooking', 'Cooking'),
+  ComicGenre('crime', 'Crime'),
+  ComicGenre('drama', 'Drama'),
+  ComicGenre('ecchi', 'Ecchi'),
+  ComicGenre('fantasy', 'Fantasy'),
+  ComicGenre('game', 'Game'),
+  ComicGenre('gender-bender', 'Gender Bender'),
+  ComicGenre('harem', 'Harem'),
+  ComicGenre('historical', 'Historical'),
+  ComicGenre('horror', 'Horror'),
+  ComicGenre('isekai', 'Isekai'),
+  ComicGenre('josei', 'Josei'),
+  ComicGenre('magic', 'Magic'),
+  ComicGenre('martial-arts', 'Martial Arts'),
+  ComicGenre('mature', 'Mature'),
+  ComicGenre('mecha', 'Mecha'),
+  ComicGenre('military', 'Military'),
+  ComicGenre('music', 'Music'),
+  ComicGenre('mystery', 'Mystery'),
+  ComicGenre('psychological', 'Psychological'),
+  ComicGenre('reincarnation', 'Reincarnation'),
+  ComicGenre('romance', 'Romance'),
+  ComicGenre('school-life', 'School Life'),
+  ComicGenre('sci-fi', 'Sci-Fi'),
+  ComicGenre('seinen', 'Seinen'),
+  ComicGenre('shoujo', 'Shoujo'),
+  ComicGenre('shounen', 'Shounen'),
+  ComicGenre('slice-of-life', 'Slice of Life'),
+  ComicGenre('sports', 'Sports'),
+  ComicGenre('supernatural', 'Supernatural'),
+  ComicGenre('survival', 'Survival'),
+  ComicGenre('thriller', 'Thriller'),
+  ComicGenre('tragedy', 'Tragedy'),
+  ComicGenre('webtoons', 'Webtoons'),
+];
+
+/// Ambil opsi genre dari form filter situs: checkbox/select bernama genre,
+/// atau tautan `/genre/<slug>/`. Hasil unik, urut abjad.
+List<ComicGenre> parseGenreOptions(dom.Document doc) {
+  final out = <String, ComicGenre>{};
+  void add(String? slug, String? label) {
+    final s = (slug ?? '').trim().toLowerCase();
+    var l = cleanText(label);
+    l = l.replaceAll(RegExp(r'\s*\(\d+\)\s*$'), '').trim();
+    if (s.isEmpty || l.isEmpty || l.length > 30) return;
+    if (RegExp(r'^(all|semua|0)$').hasMatch(s) || RegExp(r'^(all|semua)\b', caseSensitive: false).hasMatch(l)) return;
+    out.putIfAbsent(s, () => ComicGenre(s, l));
+  }
+
+  for (final el in doc.querySelectorAll('input[name^="genre"]')) {
+    final v = el.attributes['value'];
+    if (v == null || v.isEmpty) continue;
+    String? label;
+    final id = el.attributes['id'];
+    if (id != null && id.isNotEmpty) {
+      for (final lb in doc.querySelectorAll('label')) {
+        if (lb.attributes['for'] == id) {
+          label = lb.text;
+          break;
+        }
+      }
+    }
+    label ??= el.parent?.text;
+    add(v, label);
+  }
+  for (final o in doc.querySelectorAll('select[name^="genre"] option')) {
+    add(o.attributes['value'], o.text);
+  }
+  if (out.isEmpty) {
+    final re = RegExp(r'/genres?/([^/?#]+)/?');
+    for (final a in doc.querySelectorAll('a[href]')) {
+      final m = re.firstMatch(a.attributes['href'] ?? '');
+      if (m != null) add(m.group(1), a.text);
+    }
+  }
+  final list = out.values.toList()..sort((a, b) => a.label.compareTo(b.label));
+  return list;
+}
+
+/// Saring hasil pencarian hasil parser generik (bisa memuat sidebar/komik
+/// tidak terkait): sisakan yang judul/slug-nya memuat kata kunci.
+List<Comic> filterRelevant(List<Comic> list, String query) {
+  final tokens = <String>[];
+  for (final t in query.toLowerCase().split(RegExp(r'[^a-z0-9]+'))) {
+    if (t.isNotEmpty) tokens.add(t);
+  }
+  if (tokens.isEmpty) return list;
+  bool has(Comic c, String t) =>
+      c.title.toLowerCase().contains(t) || c.slug.toLowerCase().contains(t);
+  final all = [for (final c in list) if (tokens.every((t) => has(c, t))) c];
+  if (all.isNotEmpty) return all;
+  final strong = [for (final t in tokens) if (t.length >= 3) t];
+  return [for (final c in list) if (strong.any((t) => has(c, t))) c];
 }
 
 // ------------------------------------------------------------------ helpers
@@ -305,25 +418,47 @@ List<Comic> parseComicLinks(dom.Document doc, String base, ComicSourceId source)
   return out;
 }
 
-/// Parser chapter berbasis pola URL (`...chapter...`).
-List<ComicChapter> parseChapterLinks(dom.Document doc, String base, {String? onlyContaining}) {
+final RegExp _chapHref =
+    RegExp(r'chapter|-ch-|/ch-|/ch/|-bab-|/bab-|/episode-\d', caseSensitive: false);
+
+final RegExp _noiseClass = RegExp(
+  r'(listupd|widget|sidebar|related|popular|serieslist|utao|bsx|rekomendasi|recommend|footer|latest-?(update|post))',
+  caseSensitive: false,
+);
+
+/// Apakah elemen berada di blok non-konten (sidebar, rekomendasi, daftar update).
+bool _inNoise(dom.Element el) {
+  dom.Element? p = el;
+  for (var i = 0; i < 8 && p != null; i++) {
+    final cls = '${p.attributes['class'] ?? ''} ${p.attributes['id'] ?? ''}';
+    if (cls.trim().isNotEmpty && _noiseClass.hasMatch(cls)) return true;
+    p = p.parent;
+  }
+  return false;
+}
+
+List<ComicChapter> chaptersFromAnchors(
+  Iterable<dom.Element> anchors,
+  String base, {
+  bool Function(String abs)? accept,
+}) {
   final out = <ComicChapter>[];
   final seen = <String>{};
   final baseHost = Uri.tryParse(base)?.host ?? '';
-  for (final a in doc.querySelectorAll('a[href]')) {
+  for (final a in anchors) {
     final href = a.attributes['href'] ?? '';
-    if (!RegExp(r'chapter|-ch-|/ch-', caseSensitive: false).hasMatch(href)) continue;
+    if (href.isEmpty || href.startsWith('#') || !_chapHref.hasMatch(href)) continue;
     final abs = absoluteUrl(base, href);
     final uri = Uri.tryParse(abs);
     if (uri == null || (baseHost.isNotEmpty && uri.host != baseHost)) continue;
-    if (onlyContaining != null && !abs.contains(onlyContaining)) continue;
+    if (accept != null && !accept(abs)) continue;
     if (!seen.add(abs)) continue;
     final text = cleanText(a.text);
-    final numMatch = RegExp(r'chapter[\s\-_.]*(\d+(?:[.\-]\d+)?)', caseSensitive: false)
+    final numMatch = RegExp(r'(?:chapter|ch|bab|episode)[\s\-_.]*(\d+(?:[.\-]\d+)?)', caseSensitive: false)
             .firstMatch(text) ??
-        RegExp(r'chapter-(\d+(?:[.\-]\d+)?)', caseSensitive: false).firstMatch(abs);
+        RegExp(r'(?:chapter|ch|bab|episode)-(\d+(?:[.\-]\d+)?)', caseSensitive: false).firstMatch(abs);
     final number = numMatch?.group(1)?.replaceAll('-', '.');
-    final titleMatch = RegExp(r'^(Chapter|Ch\.?)\s*[\d.]+[^\d]*', caseSensitive: false).firstMatch(text);
+    final titleMatch = RegExp(r'^(Chapter|Ch\.?|Bab|Episode)\s*[\d.]+[^\d]*', caseSensitive: false).firstMatch(text);
     out.add(ComicChapter(
       title: text.isEmpty ? 'Chapter ${number ?? ''}'.trim() : (titleMatch?.group(0)?.trim() ?? text),
       url: abs,
@@ -331,7 +466,67 @@ List<ComicChapter> parseChapterLinks(dom.Document doc, String base, {String? onl
       date: null,
     ));
   }
-  return sortChapters(out);
+  return out;
+}
+
+/// Parser chapter berbasis pola URL (`...chapter...`).
+List<ComicChapter> parseChapterLinks(dom.Document doc, String base, {String? onlyContaining}) {
+  return sortChapters(chaptersFromAnchors(
+    doc.querySelectorAll('a[href]'),
+    base,
+    accept: onlyContaining == null ? null : (abs) => abs.contains(onlyContaining),
+  ));
+}
+
+/// Kunci "seri" sebuah URL chapter: URL tanpa bagian chapter-nya.
+String _seriesKey(String url) {
+  final path = Uri.tryParse(url)?.path ?? url;
+  return path
+      .replaceAll(RegExp(r'[-/]?(chapter|ch|bab|episode)[-_.]?\d[^/]*/?$', caseSensitive: false), '')
+      .toLowerCase();
+}
+
+/// Cari daftar chapter dari halaman detail dengan beberapa lapis strategi,
+/// tanpa bergantung pada nama class tema:
+///  1) tautan chapter di dalam kontainer daftar chapter yang dikenal,
+///  2) semua tautan chapter di luar sidebar/rekomendasi yang memuat slug seri,
+///  3) kelompok tautan chapter terbesar yang berbagi prefix URL yang sama
+///     (slug seri di URL chapter bisa berbeda dari slug halaman seri).
+List<ComicChapter> layeredChapters(dom.Document doc, String base, String slug) {
+  const containers =
+      '#chapterlist, .eplister, .bxcl, .clstyle, .chapter-list, #Daftar_Chapter, #daftarChapter, '
+      '.listing-chapters_wrap, .chapters, .chapter_list, [id*="chapter"][id*="list"], [class*="chapter-list"]';
+  final inBox = <dom.Element>[];
+  for (final box in doc.querySelectorAll(containers)) {
+    inBox.addAll(box.querySelectorAll('a[href]'));
+  }
+  var r = chaptersFromAnchors(inBox, base);
+  if (r.isNotEmpty) return sortChapters(r);
+
+  final loose = [for (final a in doc.querySelectorAll('a[href]')) if (!_inNoise(a)) a];
+
+  if (slug.isNotEmpty) {
+    r = chaptersFromAnchors(loose, base, accept: (abs) => abs.contains(slug));
+    if (r.isNotEmpty) return sortChapters(r);
+    // slug sering berakhiran angka/"-id"; coba inti slug (maks 3 kata pertama).
+    final core = slug.split('-').where((w) => w.isNotEmpty).take(3).join('-');
+    if (core.length >= 4) {
+      r = chaptersFromAnchors(loose, base, accept: (abs) => abs.contains(core));
+      if (r.isNotEmpty) return sortChapters(r);
+    }
+  }
+
+  final all = chaptersFromAnchors(loose, base);
+  if (all.isEmpty) return const [];
+  final groups = <String, List<ComicChapter>>{};
+  for (final c in all) {
+    groups.putIfAbsent(_seriesKey(c.url), () => []).add(c);
+  }
+  List<ComicChapter> best = const [];
+  for (final g in groups.values) {
+    if (g.length > best.length) best = g;
+  }
+  return sortChapters(best);
 }
 
 /// Urutkan terbaru (nomor terbesar) dulu bila nomor tersedia.

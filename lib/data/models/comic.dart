@@ -28,6 +28,84 @@ extension ComicCategoryX on ComicCategory {
   String get slug => this == ComicCategory.all ? '' : name;
 }
 
+/// Urutan daftar komik.
+enum ComicOrder { latest, popular, az, added }
+
+extension ComicOrderX on ComicOrder {
+  String get label {
+    switch (this) {
+      case ComicOrder.latest:
+        return 'Update terbaru';
+      case ComicOrder.popular:
+        return 'Populer';
+      case ComicOrder.az:
+        return 'A-Z';
+      case ComicOrder.added:
+        return 'Baru ditambahkan';
+    }
+  }
+}
+
+/// Status terbit komik.
+enum ComicStatusFilter { all, ongoing, completed }
+
+extension ComicStatusFilterX on ComicStatusFilter {
+  String get label {
+    switch (this) {
+      case ComicStatusFilter.all:
+        return 'Semua';
+      case ComicStatusFilter.ongoing:
+        return 'Berjalan';
+      case ComicStatusFilter.completed:
+        return 'Tamat';
+    }
+  }
+}
+
+class ComicGenre extends Equatable {
+  final String slug;
+  final String label;
+  const ComicGenre(this.slug, this.label);
+
+  @override
+  List<Object?> get props => [slug];
+}
+
+/// Gabungan semua filter daftar komik: tipe + status + genre + urutan.
+class ComicFilter extends Equatable {
+  final ComicCategory category;
+  final ComicStatusFilter status;
+  final ComicGenre? genre;
+  final ComicOrder order;
+
+  const ComicFilter({
+    this.category = ComicCategory.all,
+    this.status = ComicStatusFilter.all,
+    this.genre,
+    this.order = ComicOrder.latest,
+  });
+
+  bool get isDefault =>
+      category == ComicCategory.all && status == ComicStatusFilter.all && genre == null;
+
+  ComicFilter copyWith({
+    ComicCategory? category,
+    ComicStatusFilter? status,
+    ComicOrder? order,
+    ComicGenre? genre,
+    bool clearGenre = false,
+  }) =>
+      ComicFilter(
+        category: category ?? this.category,
+        status: status ?? this.status,
+        order: order ?? this.order,
+        genre: clearGenre ? null : (genre ?? this.genre),
+      );
+
+  @override
+  List<Object?> get props => [category, status, genre, order];
+}
+
 extension ComicSourceIdX on ComicSourceId {
   String get label {
     switch (this) {

@@ -22,87 +22,188 @@ class KiryuuScraper extends ComicScraper {
   @override
   ComicSourceId get source => ComicSourceId.kiryuu;
 
-  Future<List<Comic>> _firstNonEmpty(List<String> urls) async {
-    Object? lastError;
-    for (final u in urls) {
-      try {
-        final doc = parseHtml(await _http.getHtml(u));
-        final list = parseComicLinks(doc, baseUrl, source);
-        if (list.isNotEmpty) return list;
-      } catch (e) {
-        lastError = e;
-        logger.w('Kiryuu $u gagal: $e');
-      }
-    }
-    if (lastError != null) throw lastError;
-    return const [];
+  @override
+  List<ComicOrder> get supportedOrders =>
+      const [ComicOrder.latest, ComicOrder.popular, ComicOrder.az, ComicOrder.added];
+
+  Future<List<Comic>> _htmlList(String url) async {
+    final doc = parseHtml(await _http.getHtml(url));
+    return parseComicLinks(doc, baseUrl, source);
   }
 
-  /// Kiryuu versi sekarang menjalankan filter `/advanced-search/` lewat
-  /// JavaScript (HTMX + admin-ajax), jadi parameter `type=` di URL diabaikan
-  /// dan halaman selalu kosong. Karena itu daftar diambil tanpa filter lalu
-  /// disaring di sisi aplikasi memakai badge tipe pada tiap kartu.
-  Future<List<Comic>> _listByCategory(
-    ComicCategory category, {
-    required bool popular,
-    required int page,
-  }) async {
-    final urls = popular && category == ComicCategory.all
-        ? [
-            '$baseUrl/advanced-search/?order=popular&page=$page',
-            '$baseUrl/manga/?page=$page',
-            '$baseUrl/latest/?page=$page',
-          ]
-        : [
-            '$baseUrl/latest/?page=$page',
-            '$baseUrl/manga/?page=$page',
-          ];
+  // ------------------------------------------------------------ AJAX filter
 
-    final pool = <Comic>[];
-    final seen = <String>{};
+  String? _nonce;
+
+  /// Tema Kiryuu terbaru menjalankan filter/pencarian lewat
+  /// `admin-ajax.php?action=advanced_search` dan butuh nonce dari
+  /// `action=get_nonce`.
+  Future<String?> _getNonce() async {
+    if (_nonce != null) return _nonce;
+    try {
+      final html = await _http.getHtml(
+          '$baseUrl/wp-admin/admin-ajax.php?type=search_form&action=get_nonce');
+      final doc = parseHtml(html);
+      final v = doc.querySelector('input[name="search_nonce"], input[name="nonce"]')?.attributes['value'] ??
+          RegExp(r'''value=["']([a-zA-Z0-9]{6,})["']''').firstMatch(html)?.group(1);
+      if (v != null && v.isNotEmpty) return _nonce = v;
+    } catch (e) {
+      logger.w('Kiryuu nonce gagal: $e');
+    }
+    return null;
+  }
+
+  String _ajaxOrderBy(ComicOrder o) {
+    switch (o) {
+      case ComicOrder.popular:
+        return 'popular';
+      case ComicOrder.az:
+        return 'title';
+      case ComicOrder.added:
+        return 'created';
+      case ComicOrder.latest:
+        return 'updated';
+    }
+  }
+
+  Future<List<Comic>> _ajaxSearch({
+    required int page,
+    ComicFilter filter = const ComicFilter(),
+    String query = '',
+  }) async {
+    final nonce = await _getNonce();
+    if (nonce == null) return const [];
+    String arr(List<String> v) => '[${v.map((e) => '"$e"').join(',')}]';
+    final html = await _http.postForm(
+      '$baseUrl/wp-admin/admin-ajax.php?action=advanced_search',
+      {
+        'nonce': nonce,
+        'inclusion': 'OR',
+        'exclusion': 'OR',
+        'page': '$page',
+        'genre': arr([if (filter.genre != null) filter.genre!.slug]),
+        'genre_exclude': '[]',
+        'author': '',
+        'artist': '',
+        'project': '0',
+        'type': arr([if (filter.category != ComicCategory.all) filter.category.slug]),
+        'status': filter.status == ComicStatusFilter.all
+            ? ''
+            : (filter.status == ComicStatusFilter.ongoing ? 'ongoing' : 'completed'),
+        'order': filter.order == ComicOrder.az ? 'asc' : 'desc',
+        'orderby': _ajaxOrderBy(filter.order),
+        'query': query,
+      },
+      headers: {'Referer': '$baseUrl/advanced-search/'},
+    );
+    if (html.trim().length < 50) return const [];
+    return parseComicLinks(parseHtml(html), baseUrl, source);
+  }
+
+  // ------------------------------------------------------------- browse
+
+  bool _matches(Comic c, ComicFilter f) {
+    if (f.category != ComicCategory.all) {
+      final t = (c.type ?? '').toLowerCase();
+      if (t.isNotEmpty && t != f.category.slug) return false;
+    }
+    return true;
+  }
+
+  @override
+  Future<List<Comic>> browse({int page = 1, ComicFilter filter = const ComicFilter()}) async {
+    // 1) AJAX resmi (mendukung semua filter di sisi server).
+    try {
+      final r = await _ajaxSearch(page: page, filter: filter);
+      if (r.isNotEmpty) return r;
+    } catch (e) {
+      logger.w('Kiryuu advanced_search gagal: $e');
+    }
+
+    // 2) HTML biasa. Genre -> arsip taksonomi /genre/<slug>/; selain itu
+    //    /manga/ (populer/A-Z) atau /latest/. Tipe & status disaring di aplikasi.
+    final g = filter.genre;
+    final urls = <String>[
+      if (g != null) ...[
+        '$baseUrl/genre/${g.slug}/?page=$page',
+        '$baseUrl/genre/${g.slug}/page/$page/',
+      ] else if (filter.order == ComicOrder.latest) ...[
+        '$baseUrl/latest/?page=$page',
+        '$baseUrl/manga/?order=update&page=$page',
+      ] else ...[
+        '$baseUrl/manga/?order=${filter.order == ComicOrder.popular ? 'popular' : filter.order == ComicOrder.az ? 'title' : 'latest'}&page=$page',
+        '$baseUrl/advanced-search/?order=${_ajaxOrderBy(filter.order)}&page=$page',
+        '$baseUrl/latest/?page=$page',
+      ],
+    ];
+
     Object? lastError;
+    var pool = <Comic>[];
     for (final u in urls) {
       try {
-        final doc = parseHtml(await _http.getHtml(u));
-        final list = parseComicLinks(doc, baseUrl, source);
-        for (final c in list) {
-          if (seen.add(c.id)) pool.add(c);
-        }
+        pool = await _htmlList(u);
         if (pool.isNotEmpty) break;
       } catch (e) {
         lastError = e;
         logger.w('Kiryuu $u gagal: $e');
       }
     }
-    if (pool.isEmpty && lastError != null) throw lastError;
-    if (category == ComicCategory.all) return pool;
+    if (pool.isEmpty && lastError != null && page <= 1) throw lastError;
 
-    final wanted = category.slug.toLowerCase();
-    final filtered = pool
-        .where((c) => (c.type ?? '').toLowerCase() == wanted)
-        .toList();
-    if (filtered.isNotEmpty) return filtered;
-
-    // Badge tipe tidak terbaca sama sekali -> jangan tampilkan "kosong" palsu.
-    final anyTyped = pool.any((c) => (c.type ?? '').isNotEmpty);
-    return anyTyped ? const [] : pool;
+    // Saring tipe di aplikasi.
+    // (UI tetap lanjut ke halaman berikut walau satu halaman kosong setelah disaring.)
+    return [for (final c in pool) if (_matches(c, filter)) c];
   }
 
   @override
   Future<List<Comic>> getLatest({int page = 1, ComicCategory category = ComicCategory.all}) =>
-      _listByCategory(category, popular: false, page: page);
+      browse(page: page, filter: ComicFilter(category: category));
+
+  List<ComicGenre>? _genres;
 
   @override
-  Future<List<Comic>> getPopular({int page = 1, ComicCategory category = ComicCategory.all}) =>
-      _listByCategory(category, popular: true, page: page);
+  Future<List<ComicGenre>> getGenres() async {
+    if (_genres != null) return _genres!;
+    for (final u in ['$baseUrl/advanced-search/', '$baseUrl/manga/']) {
+      try {
+        final list = parseGenreOptions(parseHtml(await _http.getHtml(u)));
+        if (list.length >= 5) return _genres = list;
+      } catch (e) {
+        logger.w('Genre Kiryuu $u gagal: $e');
+      }
+    }
+    return kCommonGenres;
+  }
 
   @override
-  Future<List<Comic>> search(String query, {int page = 1}) {
+  Future<List<Comic>> search(String query, {int page = 1}) async {
     final q = Uri.encodeQueryComponent(query);
-    return _firstNonEmpty([
-      '$baseUrl/?s=$q',
+    Object? lastError;
+
+    // 1) AJAX (pencarian asli situs), 2) /?s= (hasil disaring relevansinya
+    //    supaya sidebar "terbaru" tidak ikut terhitung hasil), 3) advanced-search.
+    try {
+      final r = await _ajaxSearch(page: page, query: query);
+      final rel = filterRelevant(r, query);
+      if (rel.isNotEmpty) return rel;
+    } catch (e) {
+      lastError = e;
+      logger.w('Kiryuu cari (ajax) gagal: $e');
+    }
+    for (final u in [
+      page <= 1 ? '$baseUrl/?s=$q' : '$baseUrl/page/$page/?s=$q',
       '$baseUrl/advanced-search/?title=$q&page=$page',
-    ]);
+    ]) {
+      try {
+        final rel = filterRelevant(await _htmlList(u), query);
+        if (rel.isNotEmpty) return rel;
+      } catch (e) {
+        lastError = e;
+        logger.w('Kiryuu cari $u gagal: $e');
+      }
+    }
+    if (lastError != null && page <= 1) throw lastError;
+    return const [];
   }
 
   /// Ambil fragmen HTMX (hx-get) yang memuat chapter / gambar.
@@ -139,11 +240,11 @@ class KiryuuScraper extends ComicScraper {
       if (t.length < 80) applyInfoLine(t, info);
     }
 
-    var chapters = parseChapterLinks(doc, baseUrl, onlyContaining: '/${comic.slug}/');
+    var chapters = layeredChapters(doc, baseUrl, comic.slug);
 
     if (chapters.isEmpty) {
       for (final frag in await _htmxDocs(doc, 'chapter')) {
-        chapters = parseChapterLinks(frag, baseUrl, onlyContaining: '/${comic.slug}/');
+        chapters = layeredChapters(frag, baseUrl, comic.slug);
         if (chapters.isNotEmpty) break;
       }
     }
